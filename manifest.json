@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Green Leaf Pollution Testing Center",
+  "version": "1.0",
+  "description": "This extension tracks Pollution Details",
+  "icons": {
+    "128": "icon128.png",
+    "48": "icon48.png",
+    "16": "icon16.png"
+  },
+  "permissions": ["storage",
+  "notifications"
+],
+  "host_permissions": [
+    "https://puc.parivahan.gov.in/puc/views/IssueOfPuccDetailsMobileData.xhtml",
+    "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://puc.parivahan.gov.in/puc/views/IssueOfPuccDetailsMobileData.xhtml",
+        "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_icon": "icon16.png",
+    "default_popup": "popup.html"
+  }
+}

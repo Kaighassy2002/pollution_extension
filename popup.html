@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Green Leaf Pollution Tracker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      width: 280px;
+      padding: 15px;
+      background: #f4f4f9;
+      color: #333;
+    }
+    h1 {
+      font-size: 16px;
+      margin: 0 0 10px;
+      text-align: center;
+      color: #2c3e50;
+    }
+    .stat {
+      margin: 10px 0;
+      padding: 8px;
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stat span {
+      font-weight: bold;
+      color: #27ae60;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      margin-top: 15px;
+      background: #27ae60;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #219150;
+    }
+  </style>
+</head>
+<body>
+  <h1>Green Leaf Pollution</h1>
+
+  <div class="stat">✅ Synced Records: <span id="totalSynced">0</span></div>
+  <div class="stat">📌 Pending Queue: <span id="queueSize">0</span></div>
+
+  <button id="refreshBtn">🔄 Refresh</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

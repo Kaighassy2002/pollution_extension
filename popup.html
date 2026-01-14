@@ -6,52 +6,195 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      width: 280px;
+      width: 380px;
       padding: 15px;
       background: #f4f4f9;
       color: #333;
+      margin: 0;
     }
     h1 {
-      font-size: 16px;
-      margin: 0 0 10px;
+      font-size: 18px;
+      margin: 0 0 15px;
       text-align: center;
       color: #2c3e50;
+      border-bottom: 2px solid #27ae60;
+      padding-bottom: 10px;
     }
-    .stat {
-      margin: 10px 0;
-      padding: 8px;
+    .section {
+      margin: 15px 0;
+      padding: 12px;
       background: #fff;
-      border-radius: 6px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .stat span {
+    .section.pending {
+      border: 2px solid #f39c12;
+      background: #fef9e7;
+    }
+    .section-title {
       font-weight: bold;
+      font-size: 14px;
       color: #27ae60;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #e0e0e0;
+      padding-bottom: 5px;
+    }
+    .section-title.pending-title {
+      color: #f39c12;
+    }
+    .data-item {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .data-item:last-child {
+      border-bottom: none;
+    }
+    .data-label {
+      font-weight: bold;
+      color: #555;
+    }
+    .data-value {
+      color: #333;
+      text-align: right;
+      word-break: break-word;
+    }
+    .input-group {
+      margin: 12px 0;
+    }
+    .input-group label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 6px;
+      color: #555;
+      font-size: 13px;
+    }
+    .input-group input {
+      width: 100%;
+      padding: 8px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .input-group input:focus {
+      outline: none;
+      border-color: #27ae60;
+    }
+    .input-group input.pending-input {
+      border-color: #f39c12;
+    }
+    .input-group input.pending-input:focus {
+      border-color: #e67e22;
     }
     button {
       display: block;
       width: 100%;
-      padding: 8px;
-      margin-top: 15px;
+      padding: 10px;
+      margin-top: 10px;
       background: #27ae60;
       color: white;
       border: none;
       border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
+      font-weight: bold;
     }
     button:hover {
       background: #219150;
     }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #95a5a6;
+      margin-top: 5px;
+    }
+    button.secondary:hover {
+      background: #7f8c8d;
+    }
+    button.complete-btn {
+      background: #f39c12;
+      font-size: 12px;
+      padding: 6px;
+      margin-top: 8px;
+    }
+    button.complete-btn:hover {
+      background: #e67e22;
+    }
+    .no-data {
+      text-align: center;
+      color: #999;
+      padding: 20px;
+      font-style: italic;
+    }
+    .error {
+      color: #e74c3c;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+    .success {
+      color: #27ae60;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+    .pending-item {
+      background: #fff;
+      border: 1px solid #f39c12;
+      border-radius: 6px;
+      padding: 10px;
+      margin: 8px 0;
+    }
+    .pending-item-header {
+      font-weight: bold;
+      color: #f39c12;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
-  <h1>Green Leaf Pollution</h1>
+  <h1>Green Leaf Pollution Tracker</h1>
 
-  <div class="stat">✅ Synced Records: <span id="totalSynced">0</span></div>
-  <div class="stat">📌 Pending Queue: <span id="queueSize">0</span></div>
+  <!-- Pending Records Section (Pinned) -->
+  <div class="section pending">
+    <div class="section-title pending-title">📌 Pending Records (Add Mobile Number)</div>
+    <div id="pendingRecordsContainer">
+      <div class="no-data">No pending records.</div>
+    </div>
+  </div>
 
-  <button id="refreshBtn">🔄 Refresh</button>
+  <!-- Scraped Data Display -->
+  <div class="section">
+    <div class="section-title">📊 Current Scraped Data</div>
+    <div id="scrapedDataContainer">
+      <div class="no-data">No data scraped yet. Please visit the certificate page.</div>
+    </div>
+  </div>
+
+  <!-- Mobile Number Input for Current Scraped Data -->
+  <div class="section">
+    <div class="section-title">📱 Save Current Data</div>
+    <div class="input-group">
+      <label for="mobileInput">Mobile Number (10 digits)</label>
+      <input type="tel" id="mobileInput" placeholder="Enter 10-digit mobile number" maxlength="10" pattern="[0-9]{10}">
+      <div id="mobileError" class="error"></div>
+    </div>
+    <button id="saveBtn">💾 Save Data</button>
+    <button id="savePendingBtn" class="secondary">📌 Save as Pending (Without Mobile)</button>
+    <div id="saveMessage"></div>
+  </div>
+
+  <!-- Latest Saved Data Display -->
+  <div class="section">
+    <div class="section-title">✅ Latest Saved Data</div>
+    <div id="savedDataContainer">
+      <div class="no-data">No data saved yet.</div>
+    </div>
+  </div>
 
   <script src="popup.js"></script>
 </body>

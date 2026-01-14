@@ -1,52 +1,153 @@
-// In-memory cache (for merging data)
-let cache = {};
+// Store scraped data and handle saving to backend
 let totalSynced = 0;
-let queue = [];
 
-// Listen for messages from content.js
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === "COLLECT_DATA") {
-    const newData = message.payload;
-    const vehicleNo = newData.vehicleNo;
-    if (!vehicleNo) return;
-
-    console.log("📩 Incoming data:", newData);
-
-    // Merge new data with existing cache
-    cache[vehicleNo] = cache[vehicleNo]
-      ? { ...cache[vehicleNo], ...newData }
-      : { ...newData };
-
-    const record = cache[vehicleNo];
-    console.log("📝 Current merged record:", record);
-
-    // ✅ Check if record is fully complete
-    if (record.mobile && record.rate && record.validDate && record.uptoDate) {
-      const formattedRecord = formatRecordForBackend(record);
-      console.log("✅ Record complete, sending to backend:", formattedRecord);
-
-      sendToBackend(formattedRecord);
-      delete cache[vehicleNo];
-
-      // Remove from queue if exists
-      queue = queue.filter((r) => r.vehicleNo !== vehicleNo);
-    } else {
-      // Add to queue if not complete
-      if (!queue.find((r) => r.vehicleNo === vehicleNo)) {
-        queue.push(record);
-        console.log("⏳ Added to queue (incomplete):", record);
-      } else {
-        // If already exists, update the queue record too
-        queue = queue.map((r) =>
-          r.vehicleNo === vehicleNo ? record : r
-        );
+// Listen for scraped data from page 2
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "SCRAPED_DATA") {
+    const scrapedData = message.payload;
+    console.log("📩 Scraped data received:", scrapedData);
+    
+    // Store scraped data in chrome.storage for popup to display
+    chrome.storage.local.set({
+      latestScrapedData: scrapedData
+    });
+    
+    // Automatically save as pending if it doesn't already exist
+    // NOTE: Pending records are stored LOCALLY ONLY - NOT sent to backend
+    // Backend requires mobile number, so records stay in local storage until mobile is added
+    chrome.storage.local.get(["pendingRecords"], (result) => {
+      const pendingRecords = result.pendingRecords || [];
+      
+      // Check if this vehicle number already exists in pending
+      const exists = pendingRecords.find(r => r.vehicleNo === scrapedData.vehicleNo);
+      
+      if (!exists) {
+        // Add timestamp for sorting
+        const pendingRecord = {
+          ...scrapedData,
+          timestamp: Date.now()
+        };
+        pendingRecords.push(pendingRecord);
+        
+        // Store locally only - NOT sent to backend (backend requires mobile number)
+        chrome.storage.local.set({ pendingRecords });
+        console.log("📌 Saved as pending (local storage only):", pendingRecord);
       }
-    }
-
-    updateStorage();
+    });
+    
+    // Show notification that data was scraped
+    showNotification(
+      "Data Scraped Successfully ✅",
+      `Pollution details for ${scrapedData.vehicleNo} are ready.`
+    );
+    
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // Handle save request from popup (with mobile number - direct save)
+  if (message.type === "SAVE_DATA") {
+    const dataWithMobile = message.payload;
+    console.log("💾 Saving data with mobile:", dataWithMobile);
+    
+    const formattedRecord = formatRecordForBackend(dataWithMobile);
+    sendToBackend(formattedRecord, () => {
+      // Remove from pending if it exists
+      removeFromPending(dataWithMobile.vehicleNo);
+    });
+    
+    sendResponse({ success: true });
+    return true; // Keep connection open for async response
+  }
+  
+  // Handle save pending (without mobile number)
+  // NOTE: Pending records are stored LOCALLY ONLY (chrome.storage.local)
+  // They are NOT sent to backend until mobile number is added via COMPLETE_PENDING
+  if (message.type === "SAVE_PENDING") {
+    const dataWithoutMobile = message.payload;
+    console.log("📌 Saving as pending (local storage only):", dataWithoutMobile);
+    
+    chrome.storage.local.get(["pendingRecords"], (result) => {
+      const pendingRecords = result.pendingRecords || [];
+      
+      // Check if already exists
+      const existingIndex = pendingRecords.findIndex(r => r.vehicleNo === dataWithoutMobile.vehicleNo);
+      
+      const pendingRecord = {
+        ...dataWithoutMobile,
+        timestamp: Date.now()
+      };
+      
+      if (existingIndex >= 0) {
+        pendingRecords[existingIndex] = pendingRecord;
+      } else {
+        pendingRecords.push(pendingRecord);
+      }
+      
+      // Store locally - NOT sent to backend (backend requires mobile number)
+      chrome.storage.local.set({ pendingRecords });
+      sendResponse({ success: true });
+    });
+    
+    return true;
+  }
+  
+  // Handle complete pending record (add mobile and save)
+  if (message.type === "COMPLETE_PENDING") {
+    const { vehicleNo, mobile } = message.payload;
+    console.log("✅ Completing pending record:", vehicleNo, mobile);
+    
+    chrome.storage.local.get(["pendingRecords"], (result) => {
+      const pendingRecords = result.pendingRecords || [];
+      const pendingRecord = pendingRecords.find(r => r.vehicleNo === vehicleNo);
+      
+      if (pendingRecord) {
+        const completeRecord = {
+          ...pendingRecord,
+          mobile: mobile
+        };
+        
+        const formattedRecord = formatRecordForBackend(completeRecord);
+        sendToBackend(formattedRecord, () => {
+          // Remove from pending
+          removeFromPending(vehicleNo);
+        });
+        
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: "Pending record not found" });
+      }
+    });
+    
+    return true;
+  }
+  
+  // Handle request for latest saved data
+  if (message.type === "GET_LATEST_SAVED") {
+    chrome.storage.local.get(["latestSavedData"], (result) => {
+      sendResponse({ data: result.latestSavedData || null });
+    });
+    return true;
+  }
+  
+  // Handle get pending records
+  if (message.type === "GET_PENDING") {
+    chrome.storage.local.get(["pendingRecords"], (result) => {
+      sendResponse({ data: result.pendingRecords || [] });
+    });
+    return true;
   }
 });
 
+// Remove record from pending
+function removeFromPending(vehicleNo) {
+  chrome.storage.local.get(["pendingRecords"], (result) => {
+    const pendingRecords = result.pendingRecords || [];
+    const updated = pendingRecords.filter(r => r.vehicleNo !== vehicleNo);
+    chrome.storage.local.set({ pendingRecords: updated });
+    console.log("🗑️ Removed from pending:", vehicleNo);
+  });
+}
 
 // Format record for backend
 function formatRecordForBackend(record) {
@@ -72,7 +173,6 @@ function formatRecordForBackend(record) {
   return formatted;
 }
 
-
 // Show Chrome notification
 function showNotification(title, message) {
   chrome.notifications.create(
@@ -92,9 +192,19 @@ function showNotification(title, message) {
   );
 }
 
-
 // Send record to backend
-function sendToBackend(record) {
+// IMPORTANT: Only sends records WITH mobile numbers (backend requires mobile to be mandatory)
+function sendToBackend(record, callback) {
+  // Validate that mobile number exists (backend requirement)
+  if (!record.mobile || record.mobile.trim() === '') {
+    console.error("❌ Cannot save to backend: Mobile number is mandatory");
+    showNotification(
+      "Save Failed ❌",
+      "Mobile number is required to save data to the database."
+    );
+    return;
+  }
+
   console.log("🚀 Sending to backend:", record);
 
   fetch("https://pollution-server.onrender.com/dataEntry", {
@@ -107,9 +217,13 @@ function sendToBackend(record) {
       console.log("✅ Saved to DB:", data);
       totalSynced++;
 
-      // Remove from queue if present
-      queue = queue.filter((r) => r.vehicleNo !== record.vehicleNo);
-      updateStorage();
+      // Store latest saved data for popup to display
+      chrome.storage.local.set({
+        latestSavedData: record,
+        formCapture_status: { totalSynced }
+      });
+
+      if (callback) callback();
 
       showNotification(
         "Data Saved Successfully ✅",
@@ -118,54 +232,9 @@ function sendToBackend(record) {
     })
     .catch((err) => {
       console.error("❌ Save error:", err);
-
-      // Retry later
-      if (!queue.find((r) => r.vehicleNo === record.vehicleNo)) {
-        queue.push(record);
-        console.log("🔁 Re-added to queue for retry:", record);
-      }
-      updateStorage();
-
       showNotification(
         "Save Failed ❌",
-        `Could not save data for ${record.vehicleNo}. Will retry later.`
+        `Could not save data for ${record.vehicleNo}. Please try again.`
       );
     });
 }
-
-
-// Update Chrome local storage
-function updateStorage() {
-  console.log("📊 Updating storage → totalSynced:", totalSynced, " | queue:", queue);
-  chrome.storage.local.set({
-    formCapture_status: { totalSynced },
-    formCapture_queue: queue,
-  });
-}
-
-
-// ✅ Dynamic Retry (no fixed interval)
-function processQueue() {
-  if (queue.length === 0) {
-    console.log("⏳ No items in queue. Will check again later...");
-    // Wait 15 minutes if no data
-    setTimeout(processQueue, 15 * 60 * 1000);
-    return;
-  }
-
-  console.log("🔁 Retrying queue:", queue);
-
-  const retryQueue = [...queue];
-  queue = [];
-
-  retryQueue.forEach((record) => {
-    const formattedRecord = formatRecordForBackend(record);
-    sendToBackend(formattedRecord);
-  });
-
-  // Schedule next retry after 10 minutes
-  setTimeout(processQueue, 10 * 60 * 1000);
-}
-
-// Start dynamic retry loop
-processQueue();

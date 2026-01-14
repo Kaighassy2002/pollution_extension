@@ -12,7 +12,6 @@
   "notifications"
 ],
   "host_permissions": [
-    "https://puc.parivahan.gov.in/puc/views/IssueOfPuccDetailsMobileData.xhtml",
     "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"
   ],
   "background": {
@@ -21,7 +20,6 @@
   "content_scripts": [
     {
       "matches": [
-        "https://puc.parivahan.gov.in/puc/views/IssueOfPuccDetailsMobileData.xhtml",
         "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"
       ],
       "js": ["content.js"],

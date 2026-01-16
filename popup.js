@@ -241,17 +241,17 @@ function setupEventListeners() {
   const savePendingBtn = document.getElementById('savePendingBtn');
   const mobileError = document.getElementById('mobileError');
   
-  // Validate mobile number input
+  // Validate mobile number input (optional field)
   mobileInput.addEventListener('input', () => {
     const value = mobileInput.value.trim();
     mobileError.textContent = '';
     
     if (value && !/^\d{10}$/.test(value)) {
-      mobileError.textContent = 'Please enter exactly 10 digits';
+      mobileError.textContent = 'Please enter exactly 10 digits (or leave blank)';
     }
   });
   
-  // Handle save button click (with mobile)
+  // Handle save button click (with or without mobile - both are allowed)
   saveBtn.addEventListener('click', async () => {
     await saveData();
   });
@@ -269,7 +269,7 @@ function setupEventListeners() {
   });
 }
 
-// Save data with mobile number (direct save to backend)
+// Save data with or without mobile number (mobile is optional)
 async function saveData() {
   const mobileInput = document.getElementById('mobileInput');
   const mobileError = document.getElementById('mobileError');
@@ -278,14 +278,9 @@ async function saveData() {
   
   const mobile = mobileInput.value.trim();
   
-  // Validate mobile number
-  if (!mobile) {
-    mobileError.textContent = 'Please enter a mobile number';
-    return;
-  }
-  
-  if (!/^\d{10}$/.test(mobile)) {
-    mobileError.textContent = 'Please enter exactly 10 digits';
+  // Validate mobile number format if provided (mobile is optional)
+  if (mobile && !/^\d{10}$/.test(mobile)) {
+    mobileError.textContent = 'Please enter exactly 10 digits (or leave blank)';
     return;
   }
   

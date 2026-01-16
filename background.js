@@ -13,8 +13,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     
     // Automatically save as pending if it doesn't already exist
-    // NOTE: Pending records are stored LOCALLY ONLY - NOT sent to backend
-    // Backend requires mobile number, so records stay in local storage until mobile is added
+    // NOTE: Pending records are stored LOCALLY for easy access
+    // Records can be saved to backend with or without mobile number
     chrome.storage.local.get(["pendingRecords"], (result) => {
       const pendingRecords = result.pendingRecords || [];
       
@@ -29,7 +29,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         };
         pendingRecords.push(pendingRecord);
         
-        // Store locally only - NOT sent to backend (backend requires mobile number)
+        // Store locally for easy access (can be saved to backend later with or without mobile)
         chrome.storage.local.set({ pendingRecords });
         console.log("📌 Saved as pending (local storage only):", pendingRecord);
       }
@@ -60,9 +60,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep connection open for async response
   }
   
-  // Handle save pending (without mobile number)
-  // NOTE: Pending records are stored LOCALLY ONLY (chrome.storage.local)
-  // They are NOT sent to backend until mobile number is added via COMPLETE_PENDING
+  // Handle save pending (with or without mobile number)
+  // NOTE: Pending records are stored LOCALLY (chrome.storage.local)
+  // They can be completed later via COMPLETE_PENDING to save to backend
   if (message.type === "SAVE_PENDING") {
     const dataWithoutMobile = message.payload;
     console.log("📌 Saving as pending (local storage only):", dataWithoutMobile);
@@ -84,7 +84,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         pendingRecords.push(pendingRecord);
       }
       
-      // Store locally - NOT sent to backend (backend requires mobile number)
+      // Store locally (can be saved to backend later with or without mobile)
       chrome.storage.local.set({ pendingRecords });
       sendResponse({ success: true });
     });
@@ -160,11 +160,21 @@ function formatRecordForBackend(record) {
   let cleanedRate = record.rate || "0";
   cleanedRate = Math.floor(Number(cleanedRate));
 
+  // Parse validDate first
+  const validDateParsed = parseDate(record.validDate);
+  
+  // If uptoDate is blank/null, use validDate instead
+  let uptoDateParsed = parseDate(record.uptoDate);
+  if (!uptoDateParsed && validDateParsed) {
+    uptoDateParsed = validDateParsed;
+    console.log("⚠️ uptoDate was blank, using validDate:", validDateParsed);
+  }
+
   const formatted = {
     vehicleNo: record.vehicleNo,
     mobile: record.mobile || null,
-    uptoDate: parseDate(record.uptoDate),
-    validDate: parseDate(record.validDate),
+    uptoDate: uptoDateParsed,
+    validDate: validDateParsed,
     rate: cleanedRate,
     verified: false,
   };
@@ -193,18 +203,8 @@ function showNotification(title, message) {
 }
 
 // Send record to backend
-// IMPORTANT: Only sends records WITH mobile numbers (backend requires mobile to be mandatory)
+// Mobile number is optional - records can be saved without mobile (will be in pending state)
 function sendToBackend(record, callback) {
-  // Validate that mobile number exists (backend requirement)
-  if (!record.mobile || record.mobile.trim() === '') {
-    console.error("❌ Cannot save to backend: Mobile number is mandatory");
-    showNotification(
-      "Save Failed ❌",
-      "Mobile number is required to save data to the database."
-    );
-    return;
-  }
-
   console.log("🚀 Sending to backend:", record);
 
   fetch("https://pollution-server.onrender.com/dataEntry", {

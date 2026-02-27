@@ -1,240 +1,209 @@
-// Store scraped data and handle saving to backend
-let totalSynced = 0;
+import { MSG, STORAGE }           from './utils/constants.js';
+import { formatRecordForBackend }   from './utils/date.js';
+import { localGet, localSet }       from './utils/storage.js';
+import { saveRecord }               from './utils/api.js';
 
-// Listen for scraped data from page 2
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "SCRAPED_DATA") {
-    const scrapedData = message.payload;
-    console.log("📩 Scraped data received:", scrapedData);
-    
-    // Store scraped data in chrome.storage for popup to display
-    chrome.storage.local.set({
-      latestScrapedData: scrapedData
-    });
-    
-    // Automatically save as pending if it doesn't already exist
-    // NOTE: Pending records are stored LOCALLY for easy access
-    // Records can be saved to backend with or without mobile number
-    chrome.storage.local.get(["pendingRecords"], (result) => {
-      const pendingRecords = result.pendingRecords || [];
-      
-      // Check if this vehicle number already exists in pending
-      const exists = pendingRecords.find(r => r.vehicleNo === scrapedData.vehicleNo);
-      
-      if (!exists) {
-        // Add timestamp for sorting
-        const pendingRecord = {
-          ...scrapedData,
-          timestamp: Date.now()
-        };
-        pendingRecords.push(pendingRecord);
-        
-        // Store locally for easy access (can be saved to backend later with or without mobile)
-        chrome.storage.local.set({ pendingRecords });
-        console.log("📌 Saved as pending (local storage only):", pendingRecord);
-      }
-    });
-    
-    // Show notification that data was scraped
-    showNotification(
-      "Data Scraped Successfully ✅",
-      `Pollution details for ${scrapedData.vehicleNo} are ready.`
-    );
-    
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // Handle save request from popup (with mobile number - direct save)
-  if (message.type === "SAVE_DATA") {
-    const dataWithMobile = message.payload;
-    console.log("💾 Saving data with mobile:", dataWithMobile);
-    
-    const formattedRecord = formatRecordForBackend(dataWithMobile);
-    sendToBackend(formattedRecord, () => {
-      // Remove from pending if it exists
-      removeFromPending(dataWithMobile.vehicleNo);
-    });
-    
-    sendResponse({ success: true });
-    return true; // Keep connection open for async response
-  }
-  
-  // Handle save pending (with or without mobile number)
-  // NOTE: Pending records are stored LOCALLY (chrome.storage.local)
-  // They can be completed later via COMPLETE_PENDING to save to backend
-  if (message.type === "SAVE_PENDING") {
-    const dataWithoutMobile = message.payload;
-    console.log("📌 Saving as pending (local storage only):", dataWithoutMobile);
-    
-    chrome.storage.local.get(["pendingRecords"], (result) => {
-      const pendingRecords = result.pendingRecords || [];
-      
-      // Check if already exists
-      const existingIndex = pendingRecords.findIndex(r => r.vehicleNo === dataWithoutMobile.vehicleNo);
-      
-      const pendingRecord = {
-        ...dataWithoutMobile,
-        timestamp: Date.now()
-      };
-      
-      if (existingIndex >= 0) {
-        pendingRecords[existingIndex] = pendingRecord;
-      } else {
-        pendingRecords.push(pendingRecord);
-      }
-      
-      // Store locally (can be saved to backend later with or without mobile)
-      chrome.storage.local.set({ pendingRecords });
-      sendResponse({ success: true });
-    });
-    
-    return true;
-  }
-  
-  // Handle complete pending record (add mobile and save)
-  if (message.type === "COMPLETE_PENDING") {
-    const { vehicleNo, mobile } = message.payload;
-    console.log("✅ Completing pending record:", vehicleNo, mobile);
-    
-    chrome.storage.local.get(["pendingRecords"], (result) => {
-      const pendingRecords = result.pendingRecords || [];
-      const pendingRecord = pendingRecords.find(r => r.vehicleNo === vehicleNo);
-      
-      if (pendingRecord) {
-        const completeRecord = {
-          ...pendingRecord,
-          mobile: mobile
-        };
-        
-        const formattedRecord = formatRecordForBackend(completeRecord);
-        sendToBackend(formattedRecord, () => {
-          // Remove from pending
-          removeFromPending(vehicleNo);
-        });
-        
-        sendResponse({ success: true });
-      } else {
-        sendResponse({ success: false, error: "Pending record not found" });
-      }
-    });
-    
-    return true;
-  }
-  
-  // Handle request for latest saved data
-  if (message.type === "GET_LATEST_SAVED") {
-    chrome.storage.local.get(["latestSavedData"], (result) => {
-      sendResponse({ data: result.latestSavedData || null });
-    });
-    return true;
-  }
-  
-  // Handle get pending records
-  if (message.type === "GET_PENDING") {
-    chrome.storage.local.get(["pendingRecords"], (result) => {
-      sendResponse({ data: result.pendingRecords || [] });
-    });
-    return true;
-  }
-});
+// ─── Validation constants ─────────────────────────────────────────────────────
 
-// Remove record from pending
-function removeFromPending(vehicleNo) {
-  chrome.storage.local.get(["pendingRecords"], (result) => {
-    const pendingRecords = result.pendingRecords || [];
-    const updated = pendingRecords.filter(r => r.vehicleNo !== vehicleNo);
-    chrome.storage.local.set({ pendingRecords: updated });
-    console.log("🗑️ Removed from pending:", vehicleNo);
-  });
+const PUC_ORIGIN = 'https://puc.parivahan.gov.in';
+const MOBILE_RE  = /^[6-9]\d{9}$/;
+const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/;
+
+// ─── Trusted sender check ─────────────────────────────────────────────────────
+
+/**
+ * Accept only messages from:
+ *   - Extension pages (popup, options) — sender.tab is undefined
+ *   - The PUC portal content script
+ */
+function isTrustedSender(sender) {
+  if (!sender.tab) return true; // extension-internal (popup / options / background)
+  return sender.origin === PUC_ORIGIN ||
+         (typeof sender.url === 'string' && sender.url.startsWith(PUC_ORIGIN));
 }
 
-// Format record for backend
-function formatRecordForBackend(record) {
-  const parseDate = (str) => {
-    if (!str) return null;
-    const [day, month, year] = str.split("/");
-    return new Date(`${year}-${month}-${day}`);
+// ─── Payload validation ───────────────────────────────────────────────────────
+
+/**
+ * Whitelist-validate and sanitise an incoming scraped payload.
+ * Returns a clean object or throws.
+ */
+function validateScrapedPayload(p) {
+  if (!p || typeof p !== 'object') throw new Error('Invalid payload');
+  const vehicleNo = String(p.vehicleNo || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  if (!vehicleNo || !VEHICLE_RE.test(vehicleNo)) throw new Error('Invalid vehicle number format');
+  return {
+    vehicleNo,
+    validDate:     typeof p.validDate  === 'string' ? p.validDate.slice(0, 20)  : null,
+    uptoDate:      typeof p.uptoDate   === 'string' ? p.uptoDate.slice(0, 20)   : null,
+    rate:          typeof p.rate       === 'string' ? p.rate.slice(0, 20)       : '0',
+    missingFields: Array.isArray(p.missingFields)
+                     ? p.missingFields.filter(f => typeof f === 'string').slice(0, 5)
+                     : [],
   };
-
-  let cleanedRate = record.rate || "0";
-  cleanedRate = Math.floor(Number(cleanedRate));
-
-  // Parse validDate first
-  const validDateParsed = parseDate(record.validDate);
-  
-  // If uptoDate is blank/null, use validDate instead
-  let uptoDateParsed = parseDate(record.uptoDate);
-  if (!uptoDateParsed && validDateParsed) {
-    uptoDateParsed = validDateParsed;
-    console.log("⚠️ uptoDate was blank, using validDate:", validDateParsed);
-  }
-
-  const formatted = {
-    vehicleNo: record.vehicleNo,
-    mobile: record.mobile || null,
-    uptoDate: uptoDateParsed,
-    validDate: validDateParsed,
-    rate: cleanedRate,
-    verified: false,
-  };
-
-  console.log("🔄 Formatted for backend:", formatted);
-  return formatted;
 }
 
-// Show Chrome notification
-function showNotification(title, message) {
+// ─── Storage helpers ──────────────────────────────────────────────────────────
+
+async function addToPending(scrapedData) {
+  const result = await localGet([STORAGE.PENDING_RECORDS]);
+  const pendingRecords = result[STORAGE.PENDING_RECORDS] || [];
+  const idx = pendingRecords.findIndex(r => r.vehicleNo === scrapedData.vehicleNo);
+  const record = Object.assign({}, scrapedData, { timestamp: Date.now() });
+  if (idx >= 0) pendingRecords[idx] = record;
+  else pendingRecords.push(record);
+  await localSet({ [STORAGE.PENDING_RECORDS]: pendingRecords });
+}
+
+async function removeFromPending(vehicleNo) {
+  const result = await localGet([STORAGE.PENDING_RECORDS]);
+  const updated = (result[STORAGE.PENDING_RECORDS] || []).filter(r => r.vehicleNo !== vehicleNo);
+  await localSet({ [STORAGE.PENDING_RECORDS]: updated });
+}
+
+function notify(title, message) {
   chrome.notifications.create(
-    {
-      type: "basic",
-      iconUrl: "icon128.png",
-      title,
-      message,
-      priority: 2,
-    },
-    (notificationId) => {
-      // Auto-close after 5 seconds
-      setTimeout(() => {
-        chrome.notifications.clear(notificationId);
-      }, 5000);
-    }
+    { type: 'basic', iconUrl: 'icons/icon128.png', title, message, priority: 2 },
+    function(id) { setTimeout(function() { chrome.notifications.clear(id); }, 5000); }
   );
 }
 
-// Send record to backend
-// Mobile number is optional - records can be saved without mobile (will be in pending state)
-function sendToBackend(record, callback) {
-  console.log("🚀 Sending to backend:", record);
+// ─── Message router ───────────────────────────────────────────────────────────
 
-  fetch("https://pollution-server.onrender.com/dataEntry", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(record),
-  })
-    .then((res) => res.json())
-    .then((data) => {
-      console.log("✅ Saved to DB:", data);
-      totalSynced++;
+chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+  // Reject messages from untrusted origins
+  if (!isTrustedSender(sender)) {
+    sendResponse({ success: false, error: 'Untrusted sender' });
+    return false;
+  }
 
-      // Store latest saved data for popup to display
-      chrome.storage.local.set({
-        latestSavedData: record,
-        formCapture_status: { totalSynced }
-      });
+  if (!message || typeof message.type !== 'string') {
+    sendResponse({ success: false, error: 'Malformed message' });
+    return false;
+  }
 
-      if (callback) callback();
+  const { type, payload } = message;
 
-      showNotification(
-        "Data Saved Successfully ✅",
-        `Vehicle ${record.vehicleNo} pollution details saved.`
-      );
-    })
-    .catch((err) => {
-      console.error("❌ Save error:", err);
-      showNotification(
-        "Save Failed ❌",
-        `Could not save data for ${record.vehicleNo}. Please try again.`
-      );
+  // ── SCRAPED_DATA ──────────────────────────────────────────────────────────
+  if (type === MSG.SCRAPED_DATA) {
+    (async function() {
+      try {
+        const clean = validateScrapedPayload(payload);
+        await localSet({ [STORAGE.LATEST_SCRAPED]: clean });
+        await addToPending(clean);
+        notify('Certificate scanned', clean.vehicleNo + ' is ready to save.');
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── SAVE_DATA ─────────────────────────────────────────────────────────────
+  if (type === MSG.SAVE_DATA) {
+    (async function() {
+      try {
+        if (!payload || typeof payload !== 'object') throw new Error('Invalid payload');
+        // Mobile is optional — validate format when present
+        if (payload.mobile) {
+          const mob = String(payload.mobile).replace(/\D/g, '');
+          if (!MOBILE_RE.test(mob)) throw new Error('Invalid mobile — must be 10 digits starting with 6–9');
+        }
+        const formatted = formatRecordForBackend(payload);
+        await saveRecord(formatted);
+        await localSet({ [STORAGE.LATEST_SAVED]: formatted });
+        const syncResult = await localGet([STORAGE.TOTAL_SYNCED]);
+        await localSet({ [STORAGE.TOTAL_SYNCED]: (syncResult[STORAGE.TOTAL_SYNCED] || 0) + 1 });
+        await removeFromPending(formatted.vehicleNo);
+        notify('Saved', formatted.vehicleNo + ' saved successfully.');
+        sendResponse({ success: true });
+      } catch (err) {
+        notify('Save failed', err.message);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── SAVE_PENDING ──────────────────────────────────────────────────────────
+  if (type === MSG.SAVE_PENDING) {
+    (async function() {
+      try {
+        const clean = validateScrapedPayload(payload);
+        await addToPending(clean);
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── COMPLETE_PENDING ──────────────────────────────────────────────────────
+  if (type === MSG.COMPLETE_PENDING) {
+    (async function() {
+      try {
+        if (!payload || typeof payload !== 'object') throw new Error('Invalid payload');
+
+        // Mobile is required to complete a pending record
+        const mobile = String(payload.mobile || '').replace(/\D/g, '');
+        if (!MOBILE_RE.test(mobile)) {
+          throw new Error('Invalid mobile — must be 10 digits starting with 6–9');
+        }
+
+        // Vehicle number must be valid
+        const vehicleNo = String(payload.vehicleNo || '').toUpperCase().replace(/\s+/g, ' ').trim();
+        if (!vehicleNo || !VEHICLE_RE.test(vehicleNo)) {
+          throw new Error('Invalid vehicle number');
+        }
+
+        const result = await localGet([STORAGE.PENDING_RECORDS]);
+        const pendingRecords = result[STORAGE.PENDING_RECORDS] || [];
+        const pendingRecord  = pendingRecords.find(r => r.vehicleNo === vehicleNo);
+        if (!pendingRecord) {
+          sendResponse({ success: false, error: 'Pending record not found' });
+          return;
+        }
+
+        const complete  = Object.assign({}, pendingRecord, { mobile });
+        const formatted = formatRecordForBackend(complete);
+        await saveRecord(formatted);
+        await localSet({ [STORAGE.LATEST_SAVED]: formatted });
+        await removeFromPending(vehicleNo);
+        notify('Saved', vehicleNo + ' saved successfully.');
+        sendResponse({ success: true });
+      } catch (err) {
+        notify('Save failed', err.message);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── Read-only queries ─────────────────────────────────────────────────────
+  if (type === MSG.GET_SCRAPED) {
+    localGet([STORAGE.LATEST_SCRAPED]).then(function(r) {
+      sendResponse({ data: r[STORAGE.LATEST_SCRAPED] || null });
     });
-}
+    return true;
+  }
+
+  if (type === MSG.GET_LATEST_SAVED) {
+    localGet([STORAGE.LATEST_SAVED]).then(function(r) {
+      sendResponse({ data: r[STORAGE.LATEST_SAVED] || null });
+    });
+    return true;
+  }
+
+  if (type === MSG.GET_PENDING) {
+    localGet([STORAGE.PENDING_RECORDS]).then(function(r) {
+      sendResponse({ data: r[STORAGE.PENDING_RECORDS] || [] });
+    });
+    return true;
+  }
+
+  // Unknown message type — reject
+  sendResponse({ success: false, error: 'Unknown message type' });
+  return false;
+});

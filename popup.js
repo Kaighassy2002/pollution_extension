@@ -1,421 +1,314 @@
-// Load and display data when popup opens
-document.addEventListener('DOMContentLoaded', () => {
-  loadPendingRecords();
-  loadScrapedData();
-  loadLatestSavedData();
-  setupEventListeners();
-});
+import { MSG, STORAGE, SAVE_MODE } from './utils/constants.js';
+import { formatForDisplay, isExpiringSoon } from './utils/date.js';
+import { localGet, syncGet } from './utils/storage.js';
 
-// Load pending records
-async function loadPendingRecords() {
-  try {
-    chrome.runtime.sendMessage(
-      { type: 'GET_PENDING' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('Error loading pending records:', chrome.runtime.lastError);
-          return;
-        }
-        
-        const pendingRecords = response.data || [];
-        const container = document.getElementById('pendingRecordsContainer');
-        
-        if (pendingRecords.length === 0) {
-          container.innerHTML = '<div class="no-data">No pending records.</div>';
-          return;
-        }
-        
-        // Sort by timestamp (newest first)
-        pendingRecords.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        
-        container.innerHTML = pendingRecords.map((record, index) => {
-          const inputId = `pendingMobile_${index}`;
-          const errorId = `pendingError_${index}`;
-          
-          return `
-            <div class="pending-item">
-              <div class="pending-item-header">🚗 ${escapeHtml(record.vehicleNo)}</div>
-              <div class="data-item">
-                <span class="data-label">Valid Date:</span>
-                <span class="data-value">${escapeHtml(record.validDate || 'N/A')}</span>
-              </div>
-              <div class="data-item">
-                <span class="data-label">Valid Upto:</span>
-                <span class="data-value">${escapeHtml(record.uptoDate || 'N/A')}</span>
-              </div>
-              <div class="data-item">
-                <span class="data-label">Rate:</span>
-                <span class="data-value">₹${escapeHtml(record.rate || '0')}</span>
-              </div>
-              <div class="input-group" style="margin-top: 10px;">
-                <input type="tel" id="${inputId}" 
-                       class="pending-input" 
-                       placeholder="Enter mobile number" 
-                       maxlength="10" 
-                       pattern="[0-9]{10}"
-                       data-vehicle-no="${escapeHtml(record.vehicleNo)}">
-                <div id="${errorId}" class="error"></div>
-              </div>
-              <button class="complete-btn" data-vehicle-no="${escapeHtml(record.vehicleNo)}" data-input-id="${inputId}" data-error-id="${errorId}">
-                ✅ Complete & Save
-              </button>
-            </div>
-          `;
-        }).join('');
-        
-        // Setup event listeners for pending records
-        setupPendingRecordListeners();
-      }
-    );
-  } catch (error) {
-    console.error('Error loading pending records:', error);
-    document.getElementById('pendingRecordsContainer').innerHTML = 
-      '<div class="no-data">Error loading pending records.</div>';
-  }
-}
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-// Setup event listeners for pending records
-function setupPendingRecordListeners() {
-  const completeButtons = document.querySelectorAll('.complete-btn');
-  
-  completeButtons.forEach(button => {
-    button.addEventListener('click', async () => {
-      const vehicleNo = button.getAttribute('data-vehicle-no');
-      const inputId = button.getAttribute('data-input-id');
-      const errorId = button.getAttribute('data-error-id');
-      
-      const mobileInput = document.getElementById(inputId);
-      const errorDiv = document.getElementById(errorId);
-      
-      const mobile = mobileInput.value.trim();
-      
-      // Validate mobile number
-      if (!mobile) {
-        errorDiv.textContent = 'Please enter a mobile number';
-        return;
-      }
-      
-      if (!/^\d{10}$/.test(mobile)) {
-        errorDiv.textContent = 'Please enter exactly 10 digits';
-        return;
-      }
-      
-      // Disable button
-      button.disabled = true;
-      button.textContent = 'Saving...';
-      errorDiv.textContent = '';
-      
-      try {
-        chrome.runtime.sendMessage(
-          { type: 'COMPLETE_PENDING', payload: { vehicleNo, mobile } },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              throw new Error(chrome.runtime.lastError.message);
-            }
-            
-            if (response && response.success) {
-              errorDiv.textContent = '';
-              errorDiv.innerHTML = '<div class="success">Saved successfully! ✅</div>';
-              
-              // Reload after delay
-              setTimeout(() => {
-                loadPendingRecords();
-                loadLatestSavedData();
-              }, 500);
-            } else {
-              throw new Error(response?.error || 'Failed to save');
-            }
-            
-            button.disabled = false;
-            button.textContent = '✅ Complete & Save';
-          }
-        );
-      } catch (error) {
-        console.error('Error completing pending record:', error);
-        errorDiv.innerHTML = '<div class="error">Error saving. Please try again.</div>';
-        button.disabled = false;
-        button.textContent = '✅ Complete & Save';
-      }
-    });
-  });
-  
-  // Allow Enter key to complete
-  const pendingInputs = document.querySelectorAll('.pending-input');
-  pendingInputs.forEach(input => {
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        const vehicleNo = input.getAttribute('data-vehicle-no');
-        const button = document.querySelector(`.complete-btn[data-vehicle-no="${vehicleNo}"]`);
-        if (button) button.click();
+function sendMsg(type, payload) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type, payload }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(response);
       }
     });
   });
 }
 
-// Load scraped data from storage
-async function loadScrapedData() {
-  try {
-    const result = await chrome.storage.local.get(['latestScrapedData']);
-    const scrapedData = result.latestScrapedData;
-    
-    const container = document.getElementById('scrapedDataContainer');
-    
-    if (scrapedData && scrapedData.vehicleNo) {
-      container.innerHTML = `
-        <div class="data-item">
-          <span class="data-label">Vehicle Number:</span>
-          <span class="data-value">${escapeHtml(scrapedData.vehicleNo)}</span>
-        </div>
-        <div class="data-item">
-          <span class="data-label">Valid Date:</span>
-          <span class="data-value">${escapeHtml(scrapedData.validDate || 'N/A')}</span>
-        </div>
-        <div class="data-item">
-          <span class="data-label">Valid Upto Date:</span>
-          <span class="data-value">${escapeHtml(scrapedData.uptoDate || 'N/A')}</span>
-        </div>
-        <div class="data-item">
-          <span class="data-label">Rate:</span>
-          <span class="data-value">₹${escapeHtml(scrapedData.rate || '0')}</span>
-        </div>
-      `;
-    } else {
-      container.innerHTML = '<div class="no-data">No data scraped yet. Please visit the certificate page.</div>';
-    }
-  } catch (error) {
-    console.error('Error loading scraped data:', error);
-    document.getElementById('scrapedDataContainer').innerHTML = 
-      '<div class="no-data">Error loading data.</div>';
-  }
-}
-
-// Load latest saved data from storage
-async function loadLatestSavedData() {
-  try {
-    const result = await chrome.storage.local.get(['latestSavedData']);
-    const savedData = result.latestSavedData;
-    
-    const container = document.getElementById('savedDataContainer');
-    
-    if (savedData && savedData.vehicleNo) {
-      // Format dates for display
-      const validDate = savedData.validDate ? formatDateForDisplay(savedData.validDate) : 'N/A';
-      const uptoDate = savedData.uptoDate ? formatDateForDisplay(savedData.uptoDate) : 'N/A';
-      
-      container.innerHTML = `
-        <div class="data-item">
-          <span class="data-label">Vehicle Number:</span>
-          <span class="data-value">${escapeHtml(savedData.vehicleNo)}</span>
-        </div>
-        <div class="data-item">
-          <span class="data-label">Mobile Number:</span>
-          <span class="data-value">${escapeHtml(savedData.mobile || 'N/A')}</span>
-        </div>
-        <div class="data-item">
-          <span class="data-label">Valid Date:</span>
-          <span class="data-value">${validDate}</span>
-        </div>
-        <div class="data-item">
-          <span class="data-label">Valid Upto Date:</span>
-          <span class="data-value">${uptoDate}</span>
-        </div>
-        <div class="data-item">
-          <span class="data-label">Rate:</span>
-          <span class="data-value">₹${escapeHtml(savedData.rate || '0')}</span>
-        </div>
-      `;
-    } else {
-      container.innerHTML = '<div class="no-data">No data saved yet.</div>';
-    }
-  } catch (error) {
-    console.error('Error loading saved data:', error);
-    document.getElementById('savedDataContainer').innerHTML = 
-      '<div class="no-data">Error loading data.</div>';
-  }
-}
-
-// Setup event listeners
-function setupEventListeners() {
-  const mobileInput = document.getElementById('mobileInput');
-  const saveBtn = document.getElementById('saveBtn');
-  const savePendingBtn = document.getElementById('savePendingBtn');
-  const mobileError = document.getElementById('mobileError');
-  
-  // Validate mobile number input (optional field)
-  mobileInput.addEventListener('input', () => {
-    const value = mobileInput.value.trim();
-    mobileError.textContent = '';
-    
-    if (value && !/^\d{10}$/.test(value)) {
-      mobileError.textContent = 'Please enter exactly 10 digits (or leave blank)';
-    }
-  });
-  
-  // Handle save button click (with or without mobile - both are allowed)
-  saveBtn.addEventListener('click', async () => {
-    await saveData();
-  });
-  
-  // Handle save pending button click (without mobile)
-  savePendingBtn.addEventListener('click', async () => {
-    await saveAsPending();
-  });
-  
-  // Allow Enter key to save
-  mobileInput.addEventListener('keypress', async (e) => {
-    if (e.key === 'Enter') {
-      await saveData();
-    }
-  });
-}
-
-// Save data with or without mobile number (mobile is optional)
-async function saveData() {
-  const mobileInput = document.getElementById('mobileInput');
-  const mobileError = document.getElementById('mobileError');
-  const saveMessage = document.getElementById('saveMessage');
-  const saveBtn = document.getElementById('saveBtn');
-  
-  const mobile = mobileInput.value.trim();
-  
-  // Validate mobile number format if provided (mobile is optional)
-  if (mobile && !/^\d{10}$/.test(mobile)) {
-    mobileError.textContent = 'Please enter exactly 10 digits (or leave blank)';
-    return;
-  }
-  
-  // Get scraped data
-  const result = await chrome.storage.local.get(['latestScrapedData']);
-  const scrapedData = result.latestScrapedData;
-  
-  if (!scrapedData || !scrapedData.vehicleNo) {
-    saveMessage.innerHTML = '<div class="error">No scraped data found. Please scrape data first.</div>';
-    return;
-  }
-  
-  // Prepare data with mobile number
-  const dataToSave = {
-    ...scrapedData,
-    mobile: mobile
-  };
-  
-  // Disable button and show loading
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving...';
-  saveMessage.innerHTML = '';
-  mobileError.textContent = '';
-  
-  try {
-    // Send message to background script to save data
-    chrome.runtime.sendMessage(
-      { type: 'SAVE_DATA', payload: dataToSave },
-      async (response) => {
-        if (chrome.runtime.lastError) {
-          throw new Error(chrome.runtime.lastError.message);
-        }
-        
-        if (response && response.success) {
-          saveMessage.innerHTML = '<div class="success">Data saved successfully! ✅</div>';
-          mobileInput.value = '';
-          
-          // Reload data after a short delay
-          setTimeout(() => {
-            loadLatestSavedData();
-            loadPendingRecords();
-          }, 500);
-        } else {
-          throw new Error('Failed to save data');
-        }
-        
-        saveBtn.disabled = false;
-        saveBtn.textContent = '💾 Save Data';
-      }
-    );
-  } catch (error) {
-    console.error('Error saving data:', error);
-    saveMessage.innerHTML = '<div class="error">Error saving data. Please try again.</div>';
-    saveBtn.disabled = false;
-    saveBtn.textContent = '💾 Save Data';
-  }
-}
-
-// Save as pending (without mobile number)
-async function saveAsPending() {
-  const savePendingBtn = document.getElementById('savePendingBtn');
-  const saveMessage = document.getElementById('saveMessage');
-  
-  // Get scraped data
-  const result = await chrome.storage.local.get(['latestScrapedData']);
-  const scrapedData = result.latestScrapedData;
-  
-  if (!scrapedData || !scrapedData.vehicleNo) {
-    saveMessage.innerHTML = '<div class="error">No scraped data found. Please scrape data first.</div>';
-    return;
-  }
-  
-  // Disable button
-  savePendingBtn.disabled = true;
-  savePendingBtn.textContent = 'Saving...';
-  saveMessage.innerHTML = '';
-  
-  try {
-    chrome.runtime.sendMessage(
-      { type: 'SAVE_PENDING', payload: scrapedData },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          throw new Error(chrome.runtime.lastError.message);
-        }
-        
-        if (response && response.success) {
-          saveMessage.innerHTML = '<div class="success">Saved as pending! 📌</div>';
-          
-          // Reload pending records
-          setTimeout(() => {
-            loadPendingRecords();
-          }, 300);
-        } else {
-          throw new Error('Failed to save as pending');
-        }
-        
-        savePendingBtn.disabled = false;
-        savePendingBtn.textContent = '📌 Save as Pending (Without Mobile)';
-      }
-    );
-  } catch (error) {
-    console.error('Error saving as pending:', error);
-    saveMessage.innerHTML = '<div class="error">Error saving as pending. Please try again.</div>';
-    savePendingBtn.disabled = false;
-    savePendingBtn.textContent = '📌 Save as Pending (Without Mobile)';
-  }
-}
-
-// Helper function to escape HTML
 function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (text == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(text);
+  return d.innerHTML;
 }
 
-// Helper function to format date for display
-function formatDateForDisplay(dateStr) {
-  if (!dateStr) return 'N/A';
-  
-  // If it's already a formatted string (DD/MM/YYYY), return as is
-  if (typeof dateStr === 'string' && dateStr.includes('/')) {
-    return dateStr;
-  }
-  
-  // If it's a Date object or ISO string, format it
+function validateMobile(value) {
+  if (!value) return null;          // empty = optional = ok
+  if (!/^[6-9]\d{9}$/.test(value)) return 'Must be 10 digits starting with 6–9';
+  return null;
+}
+
+// ── Mode pill ──────────────────────────────────────────────────────────────────
+
+async function loadModePill() {
   try {
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return dateStr;
-    
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  } catch (e) {
-    return dateStr;
+    const sync = await syncGet([STORAGE.SAVE_MODE]);
+    const mode = sync[STORAGE.SAVE_MODE] || SAVE_MODE.BACKEND;
+    const pill = document.getElementById('modePill');
+    if (pill) {
+      pill.textContent = mode === SAVE_MODE.SHEETS ? 'SHEETS' : 'BACKEND';
+    }
+  } catch (_) { /* non-critical */ }
+}
+
+// ── Current Certificate card ───────────────────────────────────────────────────
+
+async function loadScrapedData() {
+  const body = document.getElementById('currentBody');
+  try {
+    const res = await sendMsg(MSG.GET_SCRAPED);
+    const d = res && res.data;
+    if (!d || !d.vehicleNo) {
+      body.innerHTML = '<div class="empty">Open a PUC certificate page to scan data.</div>';
+      return;
+    }
+
+    const expiring = isExpiringSoon(d.uptoDate);
+    const uptoDisplay = formatForDisplay(d.uptoDate);
+    const validDisplay = formatForDisplay(d.validDate);
+    const rate = d.rate ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
+
+    body.innerHTML = `
+      <div class="cert-vehicle">${escapeHtml(d.vehicleNo)}</div>
+      <div class="cert-meta">
+        <div class="meta-cell">
+          <div class="meta-label">Issued</div>
+          <div class="meta-value">${escapeHtml(validDisplay)}</div>
+        </div>
+        <div class="meta-cell${expiring ? ' expiring' : ''}">
+          <div class="meta-label">Expires</div>
+          <div class="meta-value">${escapeHtml(uptoDisplay)}</div>
+        </div>
+        <div class="meta-cell">
+          <div class="meta-label">Fee</div>
+          <div class="meta-value">${rate}</div>
+        </div>
+      </div>
+      <div class="mobile-row">
+        <div class="mobile-wrap">
+          <input type="tel" id="mobileInput" class="field-input"
+                 placeholder="Mobile (optional)" maxlength="10">
+          <div id="mobileError" class="field-error"></div>
+        </div>
+        <button id="saveBtn" class="btn-save">Save</button>
+        <button id="savePendingBtn" class="btn-pending" title="Save without mobile">&#128204;</button>
+      </div>
+      <div id="saveFeedback" class="save-feedback"></div>
+    `;
+
+    document.getElementById('mobileInput').addEventListener('input', (e) => {
+      const err = validateMobile(e.target.value.trim());
+      const errEl = document.getElementById('mobileError');
+      errEl.textContent = err || '';
+      e.target.classList.toggle('has-error', !!err);
+    });
+    document.getElementById('mobileInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('saveBtn').click();
+    });
+    document.getElementById('saveBtn').addEventListener('click', () => saveData(d));
+    document.getElementById('savePendingBtn').addEventListener('click', () => saveAsPending(d));
+
+  } catch (err) {
+    body.innerHTML = `<div class="empty">Error loading data: ${escapeHtml(err.message)}</div>`;
   }
 }
+
+async function saveData(scrapedData) {
+  const mobileInput = document.getElementById('mobileInput');
+  const mobileError = document.getElementById('mobileError');
+  const feedback    = document.getElementById('saveFeedback');
+  const saveBtn     = document.getElementById('saveBtn');
+
+  const mobile = mobileInput.value.trim();
+  const mobileErr = validateMobile(mobile);
+  if (mobileErr) {
+    mobileInput.classList.add('has-error');
+    mobileError.textContent = mobileErr;
+    return;
+  }
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = '...';
+  feedback.textContent = '';
+  feedback.className = 'save-feedback';
+
+  try {
+    const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile });
+    if (res && res.success) {
+      feedback.textContent = 'Saved successfully';
+      feedback.className = 'save-feedback ok';
+      mobileInput.value = '';
+      setTimeout(() => { loadLatestSaved(); loadPendingRecords(); }, 400);
+    } else {
+      throw new Error(res && res.error || 'Save failed');
+    }
+  } catch (err) {
+    feedback.textContent = err.message;
+    feedback.className = 'save-feedback err';
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+  }
+}
+
+async function saveAsPending(scrapedData) {
+  const savePendingBtn = document.getElementById('savePendingBtn');
+  const feedback       = document.getElementById('saveFeedback');
+
+  savePendingBtn.disabled = true;
+  feedback.textContent = '';
+  feedback.className = 'save-feedback';
+
+  try {
+    const res = await sendMsg(MSG.SAVE_PENDING, scrapedData);
+    if (res && res.success) {
+      feedback.textContent = 'Saved as pending';
+      feedback.className = 'save-feedback ok';
+      setTimeout(loadPendingRecords, 300);
+    } else {
+      throw new Error(res && res.error || 'Failed');
+    }
+  } catch (err) {
+    feedback.textContent = err.message;
+    feedback.className = 'save-feedback err';
+  } finally {
+    savePendingBtn.disabled = false;
+  }
+}
+
+// ── Pending Records card ───────────────────────────────────────────────────────
+
+async function loadPendingRecords() {
+  const listEl  = document.getElementById('pendingList');
+  const badgeEl = document.getElementById('pendingBadge');
+
+  try {
+    const res     = await sendMsg(MSG.GET_PENDING);
+    const records = (res && res.data) || [];
+
+    badgeEl.textContent = records.length;
+
+    if (records.length === 0) {
+      listEl.innerHTML = '<div class="empty">No pending records.</div>';
+      return;
+    }
+
+    // Sort newest first
+    records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    listEl.innerHTML = records.map((r, i) => {
+      const uptoDisplay = formatForDisplay(r.uptoDate);
+      const expiring    = isExpiringSoon(r.uptoDate);
+      return `
+        <div class="pending-item">
+          <div class="pending-item-vehicle">${escapeHtml(r.vehicleNo)}</div>
+          <div class="pending-item-dates${expiring ? ' expiring' : ''}">Expires: ${escapeHtml(uptoDisplay)}</div>
+          <div class="pending-row">
+            <div class="mobile-wrap">
+              <input type="tel"
+                     class="field-input pending-input"
+                     data-idx="${i}"
+                     placeholder="Mobile number"
+                     maxlength="10">
+            </div>
+            <button class="btn-complete" data-vehicle="${escapeHtml(r.vehicleNo)}" data-idx="${i}">Save</button>
+          </div>
+          <div class="pending-item-feedback" id="pf${i}"></div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach listeners
+    listEl.querySelectorAll('.btn-complete').forEach(btn => {
+      btn.addEventListener('click', () => completePending(btn));
+    });
+    listEl.querySelectorAll('.pending-input').forEach(input => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const idx = input.dataset.idx;
+          const btn = listEl.querySelector(`.btn-complete[data-idx="${idx}"]`);
+          if (btn) btn.click();
+        }
+      });
+    });
+
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function completePending(btn) {
+  const vehicleNo = btn.dataset.vehicle;
+  const idx       = btn.dataset.idx;
+  const input     = document.querySelector(`.pending-input[data-idx="${idx}"]`);
+  const feedback  = document.getElementById(`pf${idx}`);
+
+  const mobile = input ? input.value.trim() : '';
+  if (!mobile) {
+    feedback.textContent = 'Enter a mobile number';
+    feedback.className = 'pending-item-feedback err';
+    return;
+  }
+  const mobileErr = validateMobile(mobile);
+  if (mobileErr) {
+    feedback.textContent = mobileErr;
+    feedback.className = 'pending-item-feedback err';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '...';
+  feedback.textContent = '';
+  feedback.className = 'pending-item-feedback';
+
+  try {
+    const res = await sendMsg(MSG.COMPLETE_PENDING, { vehicleNo, mobile });
+    if (res && res.success) {
+      feedback.textContent = 'Saved!';
+      feedback.className = 'pending-item-feedback ok';
+      setTimeout(() => { loadPendingRecords(); loadLatestSaved(); }, 400);
+    } else {
+      throw new Error(res && res.error || 'Failed');
+    }
+  } catch (err) {
+    feedback.textContent = err.message;
+    feedback.className = 'pending-item-feedback err';
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+// ── Last Saved card ────────────────────────────────────────────────────────────
+
+async function loadLatestSaved() {
+  const savedBody  = document.getElementById('savedBody');
+  const savedCheck = document.getElementById('savedCheck');
+
+  try {
+    const res = await sendMsg(MSG.GET_LATEST_SAVED);
+    const d   = res && res.data;
+
+    if (!d || !d.vehicleNo) {
+      savedBody.innerHTML = '<div class="empty">Nothing saved yet.</div>';
+      if (savedCheck) savedCheck.style.display = 'none';
+      return;
+    }
+
+    const uptoDisplay = formatForDisplay(d.validUpto || d.uptoDate);
+    const rate = d.rate != null ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
+    const mobile = d.mobile || '—';
+
+    savedBody.innerHTML = `
+      <div class="saved-row">
+        <div>
+          <div class="saved-vehicle">${escapeHtml(d.vehicleNo)}</div>
+          <div class="saved-meta">${escapeHtml(mobile)} &middot; Expires ${escapeHtml(uptoDisplay)} &middot; ${rate}</div>
+        </div>
+      </div>
+    `;
+    if (savedCheck) savedCheck.style.display = '';
+
+  } catch (err) {
+    savedBody.innerHTML = `<div class="empty">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadModePill();
+  loadScrapedData();
+  loadPendingRecords();
+  loadLatestSaved();
+});

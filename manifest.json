@@ -1,33 +1,35 @@
 {
   "manifest_version": 3,
-  "name": "Green Leaf Pollution Testing Center",
-  "version": "1.0",
-  "description": "This extension tracks Pollution Details",
+  "name": "GreenLine — PUC Tracker",
+  "version": "2.0",
+  "description": "Record pollution certificates and send expiry reminders. Saves to GreenLine backend or Google Sheets.",
   "icons": {
-    "128": "icon128.png",
-    "48": "icon48.png",
-    "16": "icon16.png"
+    "128": "icons/icon128.png",
+    "48":  "icons/icon48.png",
+    "16":  "icons/icon16.png"
   },
-  "permissions": ["storage",
-  "notifications"
-],
+  "permissions": ["storage", "notifications"],
   "host_permissions": [
-    "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"
+    "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml",
+    "https://sheets.googleapis.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"
-      ],
+      "matches": ["https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
   "action": {
-    "default_icon": "icon16.png",
+    "default_icon": "icons/icon16.png",
     "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; frame-ancestors 'none';"
   }
 }

@@ -32,6 +32,18 @@ export const STORAGE = {
   GREENLEAF_EMAIL:     'greenleafEmail',
   BACKEND_URL:         'backendUrl',
   AUTH_TOKEN:          'authToken',
+  // sync — Google Sheets access token (from launchWebAuthFlow)
+  SHEETS_ACCESS_TOKEN: 'sheetsAccessToken',
+  // sync — true if sheet was newly created, false if existing was linked
+  SHEETS_IS_NEW: 'sheetsIsNew',
 };
 
-export const DEFAULT_BACKEND_URL = 'https://api.greenleaf.in';
+export const DEFAULT_BACKEND_URL = 'http://localhost:8000';
+// Frontend app URL — must match externally_connectable in manifest.json
+export const APP_URL = 'http://localhost:3000';
+
+// Google OAuth Web Application client ID — used for the Sheets connect flow.
+// Create at: Google Cloud Console → APIs & Services → Credentials → Web Application.
+// Add https://<ext-id>.chromiumapp.org/ as an authorised redirect URI.
+// Find your extension ID at chrome://extensions (Developer Mode on).
+export const GOOGLE_SHEETS_CLIENT_ID = '325807504865-tmjhutbd5mmg5gunf58ak6ccm99qdg4s.apps.googleusercontent.com';

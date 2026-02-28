@@ -1,4 +1,4 @@
-import { MSG, DEFAULT_BACKEND_URL } from './utils/constants.js';
+import { MSG, APP_URL } from './utils/constants.js';
 import { formatForDisplay, isExpiringSoon } from './utils/date.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -33,12 +33,60 @@ function setStatus(el, msg, type) {
   el.className   = `connect-status ${type}`;
 }
 
+// ── Toast ───────────────────────────────────────────────────────────────────────
+
+let _toastTimer = null;
+
+function showToast(msg, type = '', ms = 2500) {
+  const el = document.getElementById('popupToast');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `popup-toast${type ? ' ' + type : ''} visible`;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.classList.remove('visible'); }, ms);
+}
+
 // ── View routing ───────────────────────────────────────────────────────────────
 
 function showView(name) {
   document.getElementById('viewConnect').style.display        = name === 'connect'        ? '' : 'none';
   document.getElementById('viewGreenLeafLogin').style.display = name === 'greenleafLogin' ? '' : 'none';
   document.getElementById('viewMain').style.display           = name === 'main'           ? '' : 'none';
+}
+
+// ── Header icon state ─────────────────────────────────────────────────────────
+
+let _glConnected     = false;
+let _sheetsConnected = false;
+
+function updateHeaderIcons(glConnected, glEmail, sheetsConnected, sheetName) {
+  _glConnected     = !!glConnected;
+  _sheetsConnected = !!sheetsConnected;
+
+  const glBtn    = document.getElementById('hdrGlBtn');
+  const glDot    = document.getElementById('hdrGlDot');
+  const shBtn    = document.getElementById('hdrSheetsBtn');
+  const shDot    = document.getElementById('hdrSheetsDot');
+
+  if (_glConnected) {
+    glBtn.classList.add('gl-connected');
+    glDot.classList.add('visible');
+    glBtn.title = `GreenLeaf · ${glEmail || 'Connected'} · Click to disconnect`;
+  } else {
+    glBtn.classList.remove('gl-connected');
+    glDot.classList.remove('visible');
+    glBtn.title = 'Login to GreenLeaf';
+  }
+
+  if (_sheetsConnected) {
+    shBtn.classList.add('sh-connected');
+    shDot.classList.add('visible');
+    shBtn.title = `Google Sheets · ${sheetName || 'Connected'} · Click to disconnect`;
+  } else {
+    shBtn.classList.remove('sh-connected');
+    shDot.classList.remove('visible');
+    shBtn.title = 'Connect Google Sheets';
+  }
 }
 
 async function initView() {
@@ -50,6 +98,12 @@ async function initView() {
 
     const sheetsOk    = sheetsRes && sheetsRes.connected;
     const greenleafOk = glRes    && glRes.connected;
+
+    // Always keep header icons in sync
+    updateHeaderIcons(
+      greenleafOk, glRes && glRes.email,
+      sheetsOk,    sheetsRes && sheetsRes.sheetName
+    );
 
     if (!sheetsOk && !greenleafOk) {
       showView('connect');
@@ -64,8 +118,9 @@ async function initView() {
     greenleafBanner.style.display = greenleafOk ? '' : 'none';
 
     if (sheetsOk) {
-      document.getElementById('connEmail').textContent = sheetsRes.email    || '';
-      document.getElementById('connSheet').textContent = sheetsRes.sheetName || '';
+      document.getElementById('connEmail').textContent = sheetsRes.email || '';
+      const sheetPrefix = sheetsRes.isNew === false ? 'Existing · ' : 'Created · ';
+      document.getElementById('connSheet').textContent = sheetPrefix + (sheetsRes.sheetName || '');
     }
     if (greenleafOk) {
       document.getElementById('glEmail').textContent = glRes.email || glRes.backendUrl || 'GreenLeaf';
@@ -82,75 +137,111 @@ async function initView() {
 
 // ── GreenLeaf connect / disconnect ────────────────────────────────────────────
 
-function showGreenLeafLogin() {
-  // Pre-fill backend URL if empty
-  const urlInput = document.getElementById('glBackendUrl');
-  if (!urlInput.value) urlInput.value = DEFAULT_BACKEND_URL;
-  showView('greenleafLogin');
+let _pollInterval = null;
+
+function startConnectionPoll() {
+  if (_pollInterval) return;
+  _pollInterval = setInterval(async () => {
+    try {
+      const res = await sendMsg(MSG.GET_GREENLEAF_STATUS);
+      if (res && res.connected) {
+        stopConnectionPoll();
+        await initView();
+      }
+    } catch (_) { /* popup may be closing */ }
+  }, 2000);
 }
 
-async function handleConnectGreenLeaf() {
-  const btn     = document.getElementById('glConnectBtn');
-  const status  = document.getElementById('glStatus');
-  const urlVal  = document.getElementById('glBackendUrl').value.trim();
-  const tokenVal = document.getElementById('glToken').value.trim();
-
-  if (!urlVal || !tokenVal) {
-    setStatus(status, 'Both fields are required', 'err');
-    return;
+function stopConnectionPoll() {
+  if (_pollInterval) {
+    clearInterval(_pollInterval);
+    _pollInterval = null;
   }
+}
 
-  btn.disabled = true;
-  setStatus(status, 'Connecting…', 'loading');
-
-  try {
-    const res = await sendMsg(MSG.CONNECT_GREENLEAF, { backendUrl: urlVal, token: tokenVal });
-    if (!res || !res.success) throw new Error(res && res.error || 'Connection failed');
-    await initView(); // will route to main view
-  } catch (err) {
-    setStatus(status, err.message, 'err');
-    btn.disabled = false;
-  }
+function showGreenLeafLogin() {
+  showView('greenleafLogin');
+  // Open the web-app auth page in a new tab — it will send the token back
+  chrome.tabs.create({
+    url: `${APP_URL}/extension-connect?ext_id=${chrome.runtime.id}`,
+  });
+  startConnectionPoll();
 }
 
 async function handleDisconnectGreenLeaf() {
   const btn = document.getElementById('glDisconnectBtn');
-  btn.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  showToast('Disconnecting GreenLeaf…');
   try {
     await sendMsg(MSG.DISCONNECT_GREENLEAF);
+    showToast('GreenLeaf disconnected', '', 2000);
     await initView();
   } catch (_) {
-    btn.disabled = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Disconnect'; }
   }
 }
 
 // ── Google Sheets connect / disconnect ────────────────────────────────────────
 
-async function handleConnectSheets() {
-  const btn    = document.getElementById('connectSheetsBtn');
-  const status = document.getElementById('connectStatus');
+function extractSpreadsheetId(input) {
+  const trimmed = (input || '').trim();
+  if (!trimmed) return null;
+  // Extract from full Google Sheets URL
+  const m = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  // Treat as a raw ID (alphanumeric + hyphens/underscores, at least 20 chars)
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(trimmed)) return trimmed;
+  return null;
+}
 
-  btn.disabled = true;
-  setStatus(status, 'Connecting to Google…', 'loading');
+async function handleConnectSheets() {
+  const btn    = document.getElementById('connectSheetsBtn');   // may be in a hidden view
+  const status = document.getElementById('connectStatus');
+  const hdrBtn = document.getElementById('hdrSheetsBtn');
+  const urlInput = document.getElementById('sheetsUrlInput');
+
+  // Extract optional existing spreadsheet ID
+  const rawInput      = urlInput ? urlInput.value : '';
+  const spreadsheetId = extractSpreadsheetId(rawInput);
+
+  // If user typed something but it doesn't look valid, reject early
+  if (rawInput.trim() && !spreadsheetId) {
+    if (status) setStatus(status, 'Invalid spreadsheet URL or ID. Paste the full Sheets URL.', 'err');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  if (hdrBtn) hdrBtn.disabled = true;
+  if (status) setStatus(status, 'Connecting to Google…', 'loading');
+  showToast('Connecting to Google Sheets…');
 
   try {
-    const res = await sendMsg(MSG.CONNECT_SHEETS);
+    const res = await sendMsg(MSG.CONNECT_SHEETS, spreadsheetId ? { spreadsheetId } : undefined);
     if (!res || !res.success) throw new Error(res && res.error || 'Connection failed');
+    if (urlInput) urlInput.value = '';
+    const label = res.isNew === false ? 'Linked to existing sheet' : 'Google Sheets connected';
+    showToast(label, 'ok', 3000);
     await initView();
   } catch (err) {
-    setStatus(status, err.message, 'err');
-    btn.disabled = false;
+    if (status) setStatus(status, err.message, 'err');
+    showToast(err.message, 'err', 4000);
+    if (btn) btn.disabled = false;
+  } finally {
+    // Always re-enable the header button so it stays clickable after connect/failure
+    if (hdrBtn) hdrBtn.disabled = false;
   }
 }
 
 async function handleDisconnectSheets() {
   const btn = document.getElementById('disconnectBtn');
-  btn.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  showToast('Disconnecting Google Sheets…');
   try {
     await sendMsg(MSG.DISCONNECT_SHEETS);
+    showToast('Google Sheets disconnected', '', 2000);
     await initView();
   } catch (_) {
-    btn.disabled = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Disconnect'; }
   }
 }
 
@@ -280,6 +371,8 @@ async function saveAsPending(scrapedData) {
 
 // ── Pending Records ────────────────────────────────────────────────────────────
 
+const PENDING_INLINE_LIMIT = 3;
+
 async function loadPendingRecords() {
   const listEl  = document.getElementById('pendingList');
   const badgeEl = document.getElementById('pendingBadge');
@@ -297,7 +390,10 @@ async function loadPendingRecords() {
 
     records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-    listEl.innerHTML = records.map((r, i) => {
+    const overflow  = records.length - PENDING_INLINE_LIMIT;
+    const toShow    = overflow > 0 ? records.slice(0, PENDING_INLINE_LIMIT) : records;
+
+    listEl.innerHTML = toShow.map((r, i) => {
       const uptoDisplay = formatForDisplay(r.uptoDate);
       const expiring    = isExpiringSoon(r.uptoDate);
       return `
@@ -315,6 +411,17 @@ async function loadPendingRecords() {
         </div>
       `;
     }).join('');
+
+    if (overflow > 0) {
+      listEl.insertAdjacentHTML('beforeend', `
+        <button class="btn-view-all" id="viewAllPendingBtn">
+          +${overflow} more — Manage all ${records.length} pending →
+        </button>
+      `);
+      document.getElementById('viewAllPendingBtn').addEventListener('click', () => {
+        chrome.tabs.create({ url: chrome.runtime.getURL('pending.html') });
+      });
+    }
 
     listEl.querySelectorAll('.btn-complete').forEach(btn => {
       btn.addEventListener('click', () => completePending(btn));
@@ -415,11 +522,23 @@ document.addEventListener('DOMContentLoaded', () => {
   showView('connect');
   initView();
 
-  document.getElementById('settingsBtn').addEventListener('click',    () => chrome.runtime.openOptionsPage());
-  document.getElementById('loginBtn').addEventListener('click',       showGreenLeafLogin);
-  document.getElementById('backBtn').addEventListener('click',        () => showView('connect'));
-  document.getElementById('glConnectBtn').addEventListener('click',   handleConnectGreenLeaf);
-  document.getElementById('glDisconnectBtn').addEventListener('click', handleDisconnectGreenLeaf);
+  // ── Connect / login view buttons ────────────────────────────────────────────
+  document.getElementById('loginBtn').addEventListener('click',         showGreenLeafLogin);
+  document.getElementById('backBtn').addEventListener('click',          () => { stopConnectionPoll(); showView('connect'); });
   document.getElementById('connectSheetsBtn').addEventListener('click', handleConnectSheets);
-  document.getElementById('disconnectBtn').addEventListener('click',  handleDisconnectSheets);
+
+  // ── Main view disconnect buttons ────────────────────────────────────────────
+  document.getElementById('glDisconnectBtn').addEventListener('click',  handleDisconnectGreenLeaf);
+  document.getElementById('disconnectBtn').addEventListener('click',    handleDisconnectSheets);
+
+  // ── Header status icons (always visible) ────────────────────────────────────
+  document.getElementById('hdrGlBtn').addEventListener('click', () => {
+    if (_glConnected) handleDisconnectGreenLeaf();
+    else showGreenLeafLogin();
+  });
+
+  document.getElementById('hdrSheetsBtn').addEventListener('click', () => {
+    if (_sheetsConnected) handleDisconnectSheets();
+    else handleConnectSheets();
+  });
 });

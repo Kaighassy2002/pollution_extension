@@ -1,7 +1,7 @@
-import { MSG, STORAGE }                                    from './utils/constants.js';
+import { MSG, STORAGE, DEFAULT_BACKEND_URL, GOOGLE_SHEETS_CLIENT_ID } from './utils/constants.js';
 import { formatRecordForBackend }                          from './utils/date.js';
 import { localGet, localSet, syncGet, syncSet }            from './utils/storage.js';
-import { saveRecord, getGoogleUserEmail, createSheetsSpreadsheet } from './utils/api.js';
+import { saveRecord, getGoogleUserEmail, createSheetsSpreadsheet, verifySheetsSpreadsheet } from './utils/api.js';
 
 // ─── Validation constants ─────────────────────────────────────────────────────
 
@@ -207,13 +207,10 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   if (type === MSG.CONNECT_GREENLEAF) {
     (async function() {
       try {
-        const { backendUrl, token } = payload || {};
-        if (!backendUrl || !token) throw new Error('Backend URL and token are required');
+        const { token } = payload || {};
+        if (!token) throw new Error('Extension token is required');
 
-        const baseUrl = backendUrl.replace(/\/$/, '');
-        if (!baseUrl.startsWith('https://') && !baseUrl.startsWith('http://')) {
-          throw new Error('Backend URL must start with http:// or https://');
-        }
+        const baseUrl = DEFAULT_BACKEND_URL;
 
         // Validate token against the backend
         const res = await fetch(`${baseUrl}/auth/me`, {
@@ -235,7 +232,6 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         await syncSet({
           [STORAGE.GREENLEAF_CONNECTED]: true,
           [STORAGE.GREENLEAF_EMAIL]:     email,
-          [STORAGE.BACKEND_URL]:         baseUrl,
           [STORAGE.AUTH_TOKEN]:          token,
         });
 
@@ -282,30 +278,64 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   if (type === MSG.CONNECT_SHEETS) {
     (async function() {
       try {
-        // 1. Get OAuth token (shows account picker if needed)
-        const token = await new Promise((resolve, reject) => {
-          chrome.identity.getAuthToken({ interactive: true }, (t) => {
-            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-            else if (!t) reject(new Error('Auth cancelled'));
-            else resolve(t);
-          });
+        // 1. Build the OAuth URL and launch the web auth flow.
+        //    launchWebAuthFlow works with a standard Web Application OAuth client
+        //    and doesn't require a Chrome-specific client type or pinned extension ID.
+        const redirectUri = chrome.identity.getRedirectURL();
+        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+        authUrl.searchParams.set('client_id',     GOOGLE_SHEETS_CLIENT_ID);
+        authUrl.searchParams.set('redirect_uri',  redirectUri);
+        authUrl.searchParams.set('response_type', 'token');
+        authUrl.searchParams.set('scope', [
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/userinfo.email',
+        ].join(' '));
+        authUrl.searchParams.set('prompt', 'select_account');
+
+        const responseUrl = await new Promise((resolve, reject) => {
+          chrome.identity.launchWebAuthFlow(
+            { url: authUrl.toString(), interactive: true },
+            (url) => {
+              if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+              else if (!url) reject(new Error('Auth cancelled'));
+              else resolve(url);
+            }
+          );
         });
 
-        // 2. Get user email
+        // 2. Extract the access token from the redirect URL fragment
+        const fragment = new URL(responseUrl).hash.slice(1);
+        const token    = new URLSearchParams(fragment).get('access_token');
+        if (!token) throw new Error('No access token returned. Please try again.');
+
+        // 3. Get user email
         const email = await getGoogleUserEmail(token);
 
-        // 3. Create a dedicated spreadsheet with header row
-        const { spreadsheetId, title } = await createSheetsSpreadsheet(token);
+        // 4. Use an existing spreadsheet or create a new one
+        let spreadsheetId, title;
+        const existingId = payload && payload.spreadsheetId;
+        if (existingId) {
+          const info = await verifySheetsSpreadsheet(token, existingId);
+          spreadsheetId = existingId;
+          title = info.title;
+        } else {
+          const created = await createSheetsSpreadsheet(token);
+          spreadsheetId = created.spreadsheetId;
+          title = created.title;
+        }
 
-        // 4. Persist connection state
+        // 5. Persist connection state (including the access token for future saves)
+        const isNew = !existingId;
         await syncSet({
           [STORAGE.SHEETS_CONNECTED]:        true,
           [STORAGE.SHEETS_EMAIL]:            email,
           [STORAGE.SHEETS_SPREADSHEET_ID]:   spreadsheetId,
           [STORAGE.SHEETS_SPREADSHEET_NAME]: title,
+          [STORAGE.SHEETS_ACCESS_TOKEN]:     token,
+          [STORAGE.SHEETS_IS_NEW]:           isNew,
         });
 
-        sendResponse({ success: true, email, sheetName: title });
+        sendResponse({ success: true, email, sheetName: title, isNew });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
       }
@@ -317,22 +347,14 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   if (type === MSG.DISCONNECT_SHEETS) {
     (async function() {
       try {
-        // Remove cached token so the next connect starts fresh
-        await new Promise((resolve) => {
-          chrome.identity.getAuthToken({ interactive: false }, (token) => {
-            if (token) {
-              chrome.identity.removeCachedAuthToken({ token }, resolve);
-            } else {
-              resolve();
-            }
-          });
-        });
-
+        // launchWebAuthFlow tokens aren't cached by Chrome, so just clear storage.
         await syncSet({
           [STORAGE.SHEETS_CONNECTED]:        false,
           [STORAGE.SHEETS_EMAIL]:            null,
           [STORAGE.SHEETS_SPREADSHEET_ID]:   null,
           [STORAGE.SHEETS_SPREADSHEET_NAME]: null,
+          [STORAGE.SHEETS_ACCESS_TOKEN]:     null,
+          [STORAGE.SHEETS_IS_NEW]:           null,
         });
 
         sendResponse({ success: true });
@@ -345,19 +367,72 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
 
   // ── GET_SHEETS_STATUS ─────────────────────────────────────────────────────
   if (type === MSG.GET_SHEETS_STATUS) {
-    syncGet([STORAGE.SHEETS_CONNECTED, STORAGE.SHEETS_EMAIL, STORAGE.SHEETS_SPREADSHEET_NAME])
+    syncGet([STORAGE.SHEETS_CONNECTED, STORAGE.SHEETS_EMAIL, STORAGE.SHEETS_SPREADSHEET_NAME, STORAGE.SHEETS_IS_NEW])
       .then((sync) => {
         sendResponse({
           connected: !!sync[STORAGE.SHEETS_CONNECTED],
           email:     sync[STORAGE.SHEETS_EMAIL]            || null,
           sheetName: sync[STORAGE.SHEETS_SPREADSHEET_NAME] || null,
+          isNew:     sync[STORAGE.SHEETS_IS_NEW]           ?? null,
         });
       })
-      .catch(() => sendResponse({ connected: false, email: null, sheetName: null }));
+      .catch(() => sendResponse({ connected: false, email: null, sheetName: null, isNew: null }));
     return true;
   }
 
   // Unknown message type — reject
   sendResponse({ success: false, error: 'Unknown message type' });
   return false;
+});
+
+// ─── External message listener (from web app tab) ─────────────────────────────
+
+/**
+ * Receives { type: 'EXTENSION_TOKEN', token: '...' } from the GreenLeaf
+ * web app after the user completes login. The token is validated against
+ * the backend and then stored in sync storage.
+ */
+chrome.runtime.onMessageExternal.addListener(function(message, sender, sendResponse) {
+  if (!message || message.type !== 'EXTENSION_TOKEN') {
+    sendResponse({ success: false, error: 'Unknown message' });
+    return false;
+  }
+
+  const { token } = message;
+  if (!token || typeof token !== 'string') {
+    sendResponse({ success: false, error: 'No token provided' });
+    return false;
+  }
+
+  (async function() {
+    try {
+      const res = await fetch(`${DEFAULT_BACKEND_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      let email = null;
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        email = data.email || data.data?.email || null;
+      } else if (res.status === 401) {
+        throw new Error('Invalid or expired token. Please try again.');
+      } else if (res.status === 404) {
+        email = null; // endpoint exists but profile not found, store anyway
+      } else {
+        throw new Error(`Backend error: HTTP ${res.status}`);
+      }
+
+      await syncSet({
+        [STORAGE.GREENLEAF_CONNECTED]: true,
+        [STORAGE.GREENLEAF_EMAIL]:     email,
+        [STORAGE.AUTH_TOKEN]:          token,
+      });
+
+      sendResponse({ success: true });
+    } catch (err) {
+      sendResponse({ success: false, error: err.message });
+    }
+  })();
+
+  return true; // keep message channel open for async response
 });

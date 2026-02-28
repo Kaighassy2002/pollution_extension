@@ -1,6 +1,5 @@
-import { MSG, STORAGE, SAVE_MODE } from './utils/constants.js';
+import { MSG, DEFAULT_BACKEND_URL } from './utils/constants.js';
 import { formatForDisplay, isExpiringSoon } from './utils/date.js';
-import { localGet, syncGet } from './utils/storage.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -24,38 +23,151 @@ function escapeHtml(text) {
 }
 
 function validateMobile(value) {
-  if (!value) return null;          // empty = optional = ok
+  if (!value) return null;
   if (!/^[6-9]\d{9}$/.test(value)) return 'Must be 10 digits starting with 6–9';
   return null;
 }
 
-// ── Mode pill ──────────────────────────────────────────────────────────────────
-
-async function loadModePill() {
-  try {
-    const sync = await syncGet([STORAGE.SAVE_MODE]);
-    const mode = sync[STORAGE.SAVE_MODE] || SAVE_MODE.BACKEND;
-    const pill = document.getElementById('modePill');
-    if (pill) {
-      pill.textContent = mode === SAVE_MODE.SHEETS ? 'SHEETS' : 'BACKEND';
-    }
-  } catch (_) { /* non-critical */ }
+function setStatus(el, msg, type) {
+  el.textContent = msg;
+  el.className   = `connect-status ${type}`;
 }
 
-// ── Current Certificate card ───────────────────────────────────────────────────
+// ── View routing ───────────────────────────────────────────────────────────────
+
+function showView(name) {
+  document.getElementById('viewConnect').style.display        = name === 'connect'        ? '' : 'none';
+  document.getElementById('viewGreenLeafLogin').style.display = name === 'greenleafLogin' ? '' : 'none';
+  document.getElementById('viewMain').style.display           = name === 'main'           ? '' : 'none';
+}
+
+async function initView() {
+  try {
+    const [sheetsRes, glRes] = await Promise.all([
+      sendMsg(MSG.GET_SHEETS_STATUS),
+      sendMsg(MSG.GET_GREENLEAF_STATUS),
+    ]);
+
+    const sheetsOk    = sheetsRes && sheetsRes.connected;
+    const greenleafOk = glRes    && glRes.connected;
+
+    if (!sheetsOk && !greenleafOk) {
+      showView('connect');
+      return;
+    }
+
+    // Update banners
+    const sheetsBanner    = document.getElementById('sheetsBanner');
+    const greenleafBanner = document.getElementById('greenleafBanner');
+
+    sheetsBanner.style.display    = sheetsOk    ? '' : 'none';
+    greenleafBanner.style.display = greenleafOk ? '' : 'none';
+
+    if (sheetsOk) {
+      document.getElementById('connEmail').textContent = sheetsRes.email    || '';
+      document.getElementById('connSheet').textContent = sheetsRes.sheetName || '';
+    }
+    if (greenleafOk) {
+      document.getElementById('glEmail').textContent = glRes.email || glRes.backendUrl || 'GreenLeaf';
+    }
+
+    showView('main');
+    loadScrapedData();
+    loadPendingRecords();
+    loadLatestSaved();
+  } catch (_) {
+    showView('connect');
+  }
+}
+
+// ── GreenLeaf connect / disconnect ────────────────────────────────────────────
+
+function showGreenLeafLogin() {
+  // Pre-fill backend URL if empty
+  const urlInput = document.getElementById('glBackendUrl');
+  if (!urlInput.value) urlInput.value = DEFAULT_BACKEND_URL;
+  showView('greenleafLogin');
+}
+
+async function handleConnectGreenLeaf() {
+  const btn     = document.getElementById('glConnectBtn');
+  const status  = document.getElementById('glStatus');
+  const urlVal  = document.getElementById('glBackendUrl').value.trim();
+  const tokenVal = document.getElementById('glToken').value.trim();
+
+  if (!urlVal || !tokenVal) {
+    setStatus(status, 'Both fields are required', 'err');
+    return;
+  }
+
+  btn.disabled = true;
+  setStatus(status, 'Connecting…', 'loading');
+
+  try {
+    const res = await sendMsg(MSG.CONNECT_GREENLEAF, { backendUrl: urlVal, token: tokenVal });
+    if (!res || !res.success) throw new Error(res && res.error || 'Connection failed');
+    await initView(); // will route to main view
+  } catch (err) {
+    setStatus(status, err.message, 'err');
+    btn.disabled = false;
+  }
+}
+
+async function handleDisconnectGreenLeaf() {
+  const btn = document.getElementById('glDisconnectBtn');
+  btn.disabled = true;
+  try {
+    await sendMsg(MSG.DISCONNECT_GREENLEAF);
+    await initView();
+  } catch (_) {
+    btn.disabled = false;
+  }
+}
+
+// ── Google Sheets connect / disconnect ────────────────────────────────────────
+
+async function handleConnectSheets() {
+  const btn    = document.getElementById('connectSheetsBtn');
+  const status = document.getElementById('connectStatus');
+
+  btn.disabled = true;
+  setStatus(status, 'Connecting to Google…', 'loading');
+
+  try {
+    const res = await sendMsg(MSG.CONNECT_SHEETS);
+    if (!res || !res.success) throw new Error(res && res.error || 'Connection failed');
+    await initView();
+  } catch (err) {
+    setStatus(status, err.message, 'err');
+    btn.disabled = false;
+  }
+}
+
+async function handleDisconnectSheets() {
+  const btn = document.getElementById('disconnectBtn');
+  btn.disabled = true;
+  try {
+    await sendMsg(MSG.DISCONNECT_SHEETS);
+    await initView();
+  } catch (_) {
+    btn.disabled = false;
+  }
+}
+
+// ── Current Certificate ────────────────────────────────────────────────────────
 
 async function loadScrapedData() {
   const body = document.getElementById('currentBody');
   try {
     const res = await sendMsg(MSG.GET_SCRAPED);
-    const d = res && res.data;
+    const d   = res && res.data;
     if (!d || !d.vehicleNo) {
       body.innerHTML = '<div class="empty">Open a PUC certificate page to scan data.</div>';
       return;
     }
 
-    const expiring = isExpiringSoon(d.uptoDate);
-    const uptoDisplay = formatForDisplay(d.uptoDate);
+    const expiring     = isExpiringSoon(d.uptoDate);
+    const uptoDisplay  = formatForDisplay(d.uptoDate);
     const validDisplay = formatForDisplay(d.validDate);
     const rate = d.rate ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
 
@@ -89,8 +201,7 @@ async function loadScrapedData() {
 
     document.getElementById('mobileInput').addEventListener('input', (e) => {
       const err = validateMobile(e.target.value.trim());
-      const errEl = document.getElementById('mobileError');
-      errEl.textContent = err || '';
+      document.getElementById('mobileError').textContent = err || '';
       e.target.classList.toggle('has-error', !!err);
     });
     document.getElementById('mobileInput').addEventListener('keydown', (e) => {
@@ -110,7 +221,7 @@ async function saveData(scrapedData) {
   const feedback    = document.getElementById('saveFeedback');
   const saveBtn     = document.getElementById('saveBtn');
 
-  const mobile = mobileInput.value.trim();
+  const mobile    = mobileInput.value.trim();
   const mobileErr = validateMobile(mobile);
   if (mobileErr) {
     mobileInput.classList.add('has-error');
@@ -119,14 +230,14 @@ async function saveData(scrapedData) {
   }
 
   saveBtn.disabled = true;
-  saveBtn.textContent = '...';
+  saveBtn.textContent = '…';
   feedback.textContent = '';
   feedback.className = 'save-feedback';
 
   try {
     const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile });
     if (res && res.success) {
-      feedback.textContent = 'Saved successfully';
+      feedback.textContent = 'Saved';
       feedback.className = 'save-feedback ok';
       mobileInput.value = '';
       setTimeout(() => { loadLatestSaved(); loadPendingRecords(); }, 400);
@@ -167,7 +278,7 @@ async function saveAsPending(scrapedData) {
   }
 }
 
-// ── Pending Records card ───────────────────────────────────────────────────────
+// ── Pending Records ────────────────────────────────────────────────────────────
 
 async function loadPendingRecords() {
   const listEl  = document.getElementById('pendingList');
@@ -184,7 +295,6 @@ async function loadPendingRecords() {
       return;
     }
 
-    // Sort newest first
     records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
     listEl.innerHTML = records.map((r, i) => {
@@ -196,11 +306,8 @@ async function loadPendingRecords() {
           <div class="pending-item-dates${expiring ? ' expiring' : ''}">Expires: ${escapeHtml(uptoDisplay)}</div>
           <div class="pending-row">
             <div class="mobile-wrap">
-              <input type="tel"
-                     class="field-input pending-input"
-                     data-idx="${i}"
-                     placeholder="Mobile number"
-                     maxlength="10">
+              <input type="tel" class="field-input pending-input" data-idx="${i}"
+                     placeholder="Mobile number" maxlength="10">
             </div>
             <button class="btn-complete" data-vehicle="${escapeHtml(r.vehicleNo)}" data-idx="${i}">Save</button>
           </div>
@@ -209,15 +316,13 @@ async function loadPendingRecords() {
       `;
     }).join('');
 
-    // Attach listeners
     listEl.querySelectorAll('.btn-complete').forEach(btn => {
       btn.addEventListener('click', () => completePending(btn));
     });
     listEl.querySelectorAll('.pending-input').forEach(input => {
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-          const idx = input.dataset.idx;
-          const btn = listEl.querySelector(`.btn-complete[data-idx="${idx}"]`);
+          const btn = listEl.querySelector(`.btn-complete[data-idx="${input.dataset.idx}"]`);
           if (btn) btn.click();
         }
       });
@@ -248,7 +353,7 @@ async function completePending(btn) {
   }
 
   btn.disabled = true;
-  btn.textContent = '...';
+  btn.textContent = '…';
   feedback.textContent = '';
   feedback.className = 'pending-item-feedback';
 
@@ -269,7 +374,7 @@ async function completePending(btn) {
   }
 }
 
-// ── Last Saved card ────────────────────────────────────────────────────────────
+// ── Last Saved ─────────────────────────────────────────────────────────────────
 
 async function loadLatestSaved() {
   const savedBody  = document.getElementById('savedBody');
@@ -286,8 +391,8 @@ async function loadLatestSaved() {
     }
 
     const uptoDisplay = formatForDisplay(d.validUpto || d.uptoDate);
-    const rate = d.rate != null ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
-    const mobile = d.mobile || '—';
+    const rate        = d.rate != null ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
+    const mobile      = d.mobile || '—';
 
     savedBody.innerHTML = `
       <div class="saved-row">
@@ -307,8 +412,14 @@ async function loadLatestSaved() {
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  loadModePill();
-  loadScrapedData();
-  loadPendingRecords();
-  loadLatestSaved();
+  showView('connect');
+  initView();
+
+  document.getElementById('settingsBtn').addEventListener('click',    () => chrome.runtime.openOptionsPage());
+  document.getElementById('loginBtn').addEventListener('click',       showGreenLeafLogin);
+  document.getElementById('backBtn').addEventListener('click',        () => showView('connect'));
+  document.getElementById('glConnectBtn').addEventListener('click',   handleConnectGreenLeaf);
+  document.getElementById('glDisconnectBtn').addEventListener('click', handleDisconnectGreenLeaf);
+  document.getElementById('connectSheetsBtn').addEventListener('click', handleConnectSheets);
+  document.getElementById('disconnectBtn').addEventListener('click',  handleDisconnectSheets);
 });

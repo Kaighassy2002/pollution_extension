@@ -3,44 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GreenLine</title>
+  <title>GreenLeaf</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --brand:      #059669;
-      --brand-dark: #047857;
-      --brand-light:#d1fae5;
-      --amber:      #d97706;
-      --amber-light:#fef3c7;
-      --red:        #dc2626;
-      --red-light:  #fee2e2;
-      --gray-50:    #f9fafb;
-      --gray-100:   #f3f4f6;
-      --gray-200:   #e5e7eb;
-      --gray-400:   #9ca3af;
-      --gray-600:   #4b5563;
-      --gray-800:   #1f2937;
-      --radius:     8px;
-      --shadow:     0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+      --brand:       #059669;
+      --brand-dark:  #047857;
+      --brand-light: #d1fae5;
+      --amber:       #d97706;
+      --amber-light: #fef3c7;
+      --red:         #dc2626;
+      --red-light:   #fee2e2;
+      --gray-50:     #f9fafb;
+      --gray-100:    #f3f4f6;
+      --gray-200:    #e5e7eb;
+      --gray-400:    #9ca3af;
+      --gray-500:    #6b7280;
+      --gray-600:    #4b5563;
+      --gray-800:    #1f2937;
+      --gray-900:    #111827;
+      --radius:      8px;
+      --shadow:      0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
     }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       width: 360px;
-      min-height: 200px;
       background: var(--gray-50);
-      color: var(--gray-800);
+      color: var(--gray-900);
       font-size: 13px;
       line-height: 1.5;
     }
 
-    /* ── Header ─────────────────────────────────────── */
+    /* ── Shared header ───────────────────────────────── */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 14px 10px;
+      padding: 11px 14px;
       background: white;
       border-bottom: 1px solid var(--gray-200);
     }
@@ -52,30 +53,260 @@
       font-size: 15px;
       color: var(--brand);
     }
-    .logo svg { flex-shrink: 0; }
-    .mode-pill {
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: .05em;
-      text-transform: uppercase;
-      padding: 2px 7px;
-      border-radius: 999px;
-      background: var(--brand-light);
-      color: var(--brand-dark);
-    }
-    .header-right { display: flex; align-items: center; gap: 8px; }
     .icon-btn {
       background: none;
       border: none;
       cursor: pointer;
       color: var(--gray-400);
-      padding: 2px;
+      padding: 4px;
       border-radius: 4px;
       display: flex;
       align-items: center;
       transition: color .15s;
     }
     .icon-btn:hover { color: var(--gray-800); }
+
+    /* ── Connect view ────────────────────────────────── */
+    #viewConnect { padding: 28px 20px 24px; }
+
+    .connect-hero {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .connect-hero-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--brand-light);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 14px;
+      color: var(--brand);
+    }
+    .connect-hero h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 6px;
+    }
+    .connect-hero p {
+      font-size: 12px;
+      color: var(--gray-500);
+      line-height: 1.6;
+    }
+
+    .btn-sheets {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 12px 16px;
+      background: white;
+      color: var(--gray-800);
+      border: 1.5px solid var(--gray-200);
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+      box-shadow: var(--shadow);
+    }
+    .btn-sheets:hover {
+      border-color: #4285F4;
+      box-shadow: 0 0 0 3px rgba(66,133,244,.1);
+    }
+    .btn-sheets:disabled { opacity: .55; cursor: not-allowed; }
+
+    .connect-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0;
+      color: var(--gray-400);
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .connect-divider::before,
+    .connect-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--gray-200);
+    }
+
+    .btn-greenleaf {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 11px 16px;
+      background: var(--brand);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-greenleaf:hover { background: var(--brand-dark); }
+
+    .connect-status {
+      margin-top: 14px;
+      font-size: 12px;
+      min-height: 16px;
+      text-align: center;
+    }
+    .connect-status.loading { color: var(--gray-500); }
+    .connect-status.err     { color: var(--red); }
+    .connect-status.ok      { color: var(--brand); }
+
+    /* ── GreenLeaf login view ────────────────────────── */
+    #viewGreenLeafLogin { display: none; padding: 16px 20px 24px; }
+
+    .btn-back {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: none;
+      border: none;
+      color: var(--gray-500);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0;
+      margin-bottom: 20px;
+    }
+    .btn-back:hover { color: var(--gray-800); }
+
+    .login-hero {
+      margin-bottom: 20px;
+    }
+    .login-hero h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 4px;
+    }
+    .login-hero p {
+      font-size: 12px;
+      color: var(--gray-500);
+    }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--gray-600);
+      margin-bottom: 5px;
+    }
+    .field-hint {
+      font-size: 11px;
+      color: var(--gray-400);
+      margin-top: 4px;
+    }
+    .field-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1.5px solid var(--gray-200);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--gray-800);
+      background: white;
+      transition: border-color .15s;
+    }
+    .field-input:focus { outline: none; border-color: var(--brand); }
+    .field-input.has-error { border-color: var(--red); }
+
+    .btn-primary-full {
+      width: 100%;
+      padding: 11px 16px;
+      background: var(--brand);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+      margin-top: 4px;
+    }
+    .btn-primary-full:hover { background: var(--brand-dark); }
+    .btn-primary-full:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
+
+    /* ── Main view ───────────────────────────────────── */
+    #viewMain { display: none; }
+
+    .connection-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 14px;
+      border-bottom: 1px solid #bbf7d0;
+      gap: 10px;
+    }
+    .banner-greenleaf { background: #f0fdf4; }
+    .banner-sheets    { background: #eff6ff; border-bottom-color: #bfdbfe; }
+
+    .conn-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .conn-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .conn-dot.dot-greenleaf { background: var(--brand); }
+    .conn-dot.dot-sheets    { background: #3b82f6; }
+
+    .conn-info { min-width: 0; }
+    .conn-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--gray-400);
+      margin-bottom: 1px;
+    }
+    .conn-email {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--gray-800);
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .conn-sheet {
+      font-size: 11px;
+      color: var(--gray-500);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+    .btn-disconnect {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--gray-500);
+      background: none;
+      border: 1px solid var(--gray-200);
+      border-radius: 4px;
+      padding: 3px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: color .15s, border-color .15s;
+    }
+    .btn-disconnect:hover { color: var(--red); border-color: var(--red); }
 
     /* ── Cards ───────────────────────────────────────── */
     .cards { padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -111,10 +342,7 @@
       min-width: 18px;
       text-align: center;
     }
-    .badge.green {
-      background: var(--brand-light);
-      color: var(--brand-dark);
-    }
+    .badge.green { background: var(--brand-light); color: var(--brand-dark); }
     .card-body { padding: 10px 12px; }
 
     /* ── Current Certificate ─────────────────────────── */
@@ -138,51 +366,16 @@
       padding: 6px 8px;
       text-align: center;
     }
-    .meta-cell.expiring {
-      background: var(--amber-light);
-    }
-    .meta-label {
-      font-size: 10px;
-      color: var(--gray-400);
-      font-weight: 500;
-      margin-bottom: 1px;
-    }
-    .meta-value {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--gray-800);
-    }
+    .meta-cell.expiring { background: var(--amber-light); }
+    .meta-label { font-size: 10px; color: var(--gray-400); font-weight: 500; margin-bottom: 1px; }
+    .meta-value { font-size: 12px; font-weight: 600; color: var(--gray-800); }
     .meta-cell.expiring .meta-value { color: var(--amber); }
 
     /* ── Mobile row ──────────────────────────────────── */
-    .mobile-row {
-      display: flex;
-      gap: 6px;
-      align-items: flex-start;
-    }
+    .mobile-row { display: flex; gap: 6px; align-items: flex-start; }
     .mobile-wrap { flex: 1; }
-    .field-input {
-      width: 100%;
-      padding: 7px 10px;
-      border: 1.5px solid var(--gray-200);
-      border-radius: 6px;
-      font-size: 13px;
-      font-family: inherit;
-      color: var(--gray-800);
-      background: white;
-      transition: border-color .15s;
-    }
-    .field-input:focus {
-      outline: none;
-      border-color: var(--brand);
-    }
-    .field-input.has-error { border-color: var(--red); }
-    .field-error {
-      font-size: 11px;
-      color: var(--red);
-      margin-top: 3px;
-      min-height: 14px;
-    }
+    .field-error { font-size: 11px; color: var(--red); margin-top: 3px; min-height: 14px; }
+
     .btn-save {
       padding: 7px 14px;
       background: var(--brand);
@@ -213,11 +406,7 @@
     .btn-pending:hover { background: var(--amber-light); }
     .btn-pending:disabled { opacity: .5; cursor: not-allowed; }
 
-    .save-feedback {
-      margin-top: 6px;
-      font-size: 12px;
-      min-height: 16px;
-    }
+    .save-feedback { margin-top: 6px; font-size: 12px; min-height: 16px; }
     .save-feedback.ok  { color: var(--brand); }
     .save-feedback.err { color: var(--red); }
 
@@ -229,22 +418,9 @@
       padding: 8px 10px;
       background: white;
     }
-    .pending-item-vehicle {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--gray-800);
-      margin-bottom: 3px;
-    }
-    .pending-item-dates {
-      font-size: 11px;
-      color: var(--gray-400);
-      margin-bottom: 7px;
-    }
-    .pending-row {
-      display: flex;
-      gap: 5px;
-      align-items: flex-start;
-    }
+    .pending-item-vehicle { font-size: 13px; font-weight: 700; color: var(--gray-800); margin-bottom: 3px; }
+    .pending-item-dates { font-size: 11px; color: var(--gray-400); margin-bottom: 7px; }
+    .pending-row { display: flex; gap: 5px; align-items: flex-start; }
     .btn-complete {
       padding: 6px 10px;
       background: var(--brand);
@@ -260,31 +436,16 @@
     }
     .btn-complete:hover { background: var(--brand-dark); }
     .btn-complete:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
-    .pending-item-feedback {
-      font-size: 11px;
-      margin-top: 4px;
-      min-height: 14px;
-    }
+    .pending-item-feedback { font-size: 11px; margin-top: 4px; min-height: 14px; }
     .pending-item-feedback.ok  { color: var(--brand); }
     .pending-item-feedback.err { color: var(--red); }
 
     /* ── Last Saved ──────────────────────────────────── */
-    .saved-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .saved-vehicle {
-      font-weight: 700;
-      color: var(--gray-800);
-    }
-    .saved-meta {
-      font-size: 11px;
-      color: var(--gray-400);
-      margin-top: 1px;
-    }
+    .saved-row { display: flex; align-items: center; justify-content: space-between; }
+    .saved-vehicle { font-weight: 700; color: var(--gray-800); }
+    .saved-meta { font-size: 11px; color: var(--gray-400); margin-top: 1px; }
 
-    /* ── Empty / No-data ─────────────────────────────── */
+    /* ── Empty ───────────────────────────────────────── */
     .empty {
       text-align: center;
       color: var(--gray-400);
@@ -296,64 +457,156 @@
 </head>
 <body>
 
-  <!-- Header -->
+  <!-- Shared header -->
   <header class="header">
     <div class="logo">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2a9 9 0 0 1 9 9c0 6-9 13-9 13S3 17 3 11a9 9 0 0 1 9-9z"/>
         <circle cx="12" cy="11" r="3"/>
       </svg>
-      GreenLine
+      GreenLeaf
     </div>
-    <div class="header-right">
-      <span id="modePill" class="mode-pill">BACKEND</span>
-      <button class="icon-btn" id="settingsBtn" title="Settings" onclick="chrome.runtime.openOptionsPage()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-      </button>
-    </div>
+    <button class="icon-btn" id="settingsBtn" title="Settings">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
   </header>
 
-  <div class="cards">
-
-    <!-- Current Certificate -->
-    <div class="card" id="cardCurrent">
-      <div class="card-header">
-        <span class="card-title">Current Certificate</span>
+  <!-- ── Connect View ──────────────────────────────────────────────── -->
+  <div id="viewConnect">
+    <div class="connect-hero">
+      <div class="connect-hero-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
       </div>
-      <div class="card-body" id="currentBody">
-        <div class="empty">Open a PUC certificate page to scan data.</div>
-      </div>
+      <h2>Automate your PUC records</h2>
+      <p>Connect once. Every certificate you issue<br>is saved automatically.</p>
     </div>
 
-    <!-- Pending Records -->
-    <div class="card" id="cardPending">
-      <div class="card-header">
-        <span class="card-title">Pending — add mobile</span>
-        <span class="badge" id="pendingBadge">0</span>
-      </div>
-      <div class="card-body">
-        <div id="pendingList" class="pending-list">
-          <div class="empty">No pending records.</div>
+    <button class="btn-greenleaf" id="loginBtn">
+      Login to GreenLeaf
+    </button>
+
+    <div class="connect-divider">or</div>
+
+    <button class="btn-sheets" id="connectSheetsBtn">
+      <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      Connect Google Sheets
+    </button>
+
+    <div class="connect-status" id="connectStatus"></div>
+  </div>
+
+  <!-- ── GreenLeaf Login View ──────────────────────────────────────── -->
+  <div id="viewGreenLeafLogin">
+    <button class="btn-back" id="backBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Back
+    </button>
+
+    <div class="login-hero">
+      <h2>Login to GreenLeaf</h2>
+      <p>Enter your backend URL and extension token to connect.</p>
+    </div>
+
+    <div class="field">
+      <label for="glBackendUrl">Backend URL</label>
+      <input id="glBackendUrl" class="field-input" type="url"
+             placeholder="https://api.greenleaf.in" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label for="glToken">Extension Token</label>
+      <input id="glToken" class="field-input" type="password"
+             placeholder="Paste your extension token" autocomplete="off">
+      <div class="field-hint">GreenLeaf dashboard → Settings → Extension Token</div>
+    </div>
+
+    <button class="btn-primary-full" id="glConnectBtn">Connect</button>
+    <div class="connect-status" id="glStatus"></div>
+  </div>
+
+  <!-- ── Main View ─────────────────────────────────────────────────── -->
+  <div id="viewMain">
+
+    <!-- GreenLeaf banner -->
+    <div id="greenleafBanner" class="connection-banner banner-greenleaf" style="display:none">
+      <div class="conn-left">
+        <div class="conn-dot dot-greenleaf"></div>
+        <div class="conn-info">
+          <span class="conn-label">GreenLeaf</span>
+          <span class="conn-email" id="glEmail"></span>
         </div>
       </div>
+      <button class="btn-disconnect" id="glDisconnectBtn">Disconnect</button>
     </div>
 
-    <!-- Last Saved -->
-    <div class="card" id="cardSaved">
-      <div class="card-header">
-        <span class="card-title">Last Saved</span>
-        <span class="badge green" id="savedCheck" style="display:none">&#10003;</span>
-      </div>
-      <div class="card-body">
-        <div id="savedBody">
-          <div class="empty">Nothing saved yet.</div>
+    <!-- Sheets banner -->
+    <div id="sheetsBanner" class="connection-banner banner-sheets" style="display:none">
+      <div class="conn-left">
+        <div class="conn-dot dot-sheets"></div>
+        <div class="conn-info">
+          <span class="conn-label">Google Sheets</span>
+          <span class="conn-email" id="connEmail"></span>
+          <span class="conn-sheet" id="connSheet"></span>
         </div>
       </div>
+      <button class="btn-disconnect" id="disconnectBtn">Disconnect</button>
     </div>
 
+    <div class="cards">
+
+      <!-- Current Certificate -->
+      <div class="card" id="cardCurrent">
+        <div class="card-header">
+          <span class="card-title">Current Certificate</span>
+        </div>
+        <div class="card-body" id="currentBody">
+          <div class="empty">Open a PUC certificate page to scan data.</div>
+        </div>
+      </div>
+
+      <!-- Pending Records -->
+      <div class="card" id="cardPending">
+        <div class="card-header">
+          <span class="card-title">Pending — add mobile</span>
+          <span class="badge" id="pendingBadge">0</span>
+        </div>
+        <div class="card-body">
+          <div id="pendingList" class="pending-list">
+            <div class="empty">No pending records.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Last Saved -->
+      <div class="card" id="cardSaved">
+        <div class="card-header">
+          <span class="card-title">Last Saved</span>
+          <span class="badge green" id="savedCheck" style="display:none">&#10003;</span>
+        </div>
+        <div class="card-body">
+          <div id="savedBody">
+            <div class="empty">Nothing saved yet.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 
   <script type="module" src="popup.js"></script>

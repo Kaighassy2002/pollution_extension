@@ -1,7 +1,7 @@
-import { MSG, STORAGE }           from './utils/constants.js';
-import { formatRecordForBackend }   from './utils/date.js';
-import { localGet, localSet }       from './utils/storage.js';
-import { saveRecord }               from './utils/api.js';
+import { MSG, STORAGE }                                    from './utils/constants.js';
+import { formatRecordForBackend }                          from './utils/date.js';
+import { localGet, localSet, syncGet, syncSet }            from './utils/storage.js';
+import { saveRecord, getGoogleUserEmail, createSheetsSpreadsheet } from './utils/api.js';
 
 // ─── Validation constants ─────────────────────────────────────────────────────
 
@@ -200,6 +200,160 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
     localGet([STORAGE.PENDING_RECORDS]).then(function(r) {
       sendResponse({ data: r[STORAGE.PENDING_RECORDS] || [] });
     });
+    return true;
+  }
+
+  // ── CONNECT_GREENLEAF ─────────────────────────────────────────────────────
+  if (type === MSG.CONNECT_GREENLEAF) {
+    (async function() {
+      try {
+        const { backendUrl, token } = payload || {};
+        if (!backendUrl || !token) throw new Error('Backend URL and token are required');
+
+        const baseUrl = backendUrl.replace(/\/$/, '');
+        if (!baseUrl.startsWith('https://') && !baseUrl.startsWith('http://')) {
+          throw new Error('Backend URL must start with http:// or https://');
+        }
+
+        // Validate token against the backend
+        const res = await fetch(`${baseUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        let email = null;
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          email = data.email || data.data?.email || null;
+        } else if (res.status === 401) {
+          throw new Error('Invalid token — generate a new one from your GreenLeaf dashboard.');
+        } else if (res.status === 404) {
+          email = null; // endpoint not yet implemented, store creds anyway
+        } else {
+          throw new Error(`Backend error: HTTP ${res.status}`);
+        }
+
+        await syncSet({
+          [STORAGE.GREENLEAF_CONNECTED]: true,
+          [STORAGE.GREENLEAF_EMAIL]:     email,
+          [STORAGE.BACKEND_URL]:         baseUrl,
+          [STORAGE.AUTH_TOKEN]:          token,
+        });
+
+        sendResponse({ success: true, email });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── DISCONNECT_GREENLEAF ──────────────────────────────────────────────────
+  if (type === MSG.DISCONNECT_GREENLEAF) {
+    (async function() {
+      try {
+        await syncSet({
+          [STORAGE.GREENLEAF_CONNECTED]: false,
+          [STORAGE.GREENLEAF_EMAIL]:     null,
+          [STORAGE.AUTH_TOKEN]:          null,
+        });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── GET_GREENLEAF_STATUS ──────────────────────────────────────────────────
+  if (type === MSG.GET_GREENLEAF_STATUS) {
+    syncGet([STORAGE.GREENLEAF_CONNECTED, STORAGE.GREENLEAF_EMAIL, STORAGE.BACKEND_URL])
+      .then((sync) => {
+        sendResponse({
+          connected: !!sync[STORAGE.GREENLEAF_CONNECTED],
+          email:     sync[STORAGE.GREENLEAF_EMAIL] || null,
+          backendUrl: sync[STORAGE.BACKEND_URL]    || null,
+        });
+      })
+      .catch(() => sendResponse({ connected: false, email: null, backendUrl: null }));
+    return true;
+  }
+
+  // ── CONNECT_SHEETS ────────────────────────────────────────────────────────
+  if (type === MSG.CONNECT_SHEETS) {
+    (async function() {
+      try {
+        // 1. Get OAuth token (shows account picker if needed)
+        const token = await new Promise((resolve, reject) => {
+          chrome.identity.getAuthToken({ interactive: true }, (t) => {
+            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+            else if (!t) reject(new Error('Auth cancelled'));
+            else resolve(t);
+          });
+        });
+
+        // 2. Get user email
+        const email = await getGoogleUserEmail(token);
+
+        // 3. Create a dedicated spreadsheet with header row
+        const { spreadsheetId, title } = await createSheetsSpreadsheet(token);
+
+        // 4. Persist connection state
+        await syncSet({
+          [STORAGE.SHEETS_CONNECTED]:        true,
+          [STORAGE.SHEETS_EMAIL]:            email,
+          [STORAGE.SHEETS_SPREADSHEET_ID]:   spreadsheetId,
+          [STORAGE.SHEETS_SPREADSHEET_NAME]: title,
+        });
+
+        sendResponse({ success: true, email, sheetName: title });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── DISCONNECT_SHEETS ─────────────────────────────────────────────────────
+  if (type === MSG.DISCONNECT_SHEETS) {
+    (async function() {
+      try {
+        // Remove cached token so the next connect starts fresh
+        await new Promise((resolve) => {
+          chrome.identity.getAuthToken({ interactive: false }, (token) => {
+            if (token) {
+              chrome.identity.removeCachedAuthToken({ token }, resolve);
+            } else {
+              resolve();
+            }
+          });
+        });
+
+        await syncSet({
+          [STORAGE.SHEETS_CONNECTED]:        false,
+          [STORAGE.SHEETS_EMAIL]:            null,
+          [STORAGE.SHEETS_SPREADSHEET_ID]:   null,
+          [STORAGE.SHEETS_SPREADSHEET_NAME]: null,
+        });
+
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── GET_SHEETS_STATUS ─────────────────────────────────────────────────────
+  if (type === MSG.GET_SHEETS_STATUS) {
+    syncGet([STORAGE.SHEETS_CONNECTED, STORAGE.SHEETS_EMAIL, STORAGE.SHEETS_SPREADSHEET_NAME])
+      .then((sync) => {
+        sendResponse({
+          connected: !!sync[STORAGE.SHEETS_CONNECTED],
+          email:     sync[STORAGE.SHEETS_EMAIL]            || null,
+          sheetName: sync[STORAGE.SHEETS_SPREADSHEET_NAME] || null,
+        });
+      })
+      .catch(() => sendResponse({ connected: false, email: null, sheetName: null }));
     return true;
   }
 

@@ -6,6 +6,14 @@ export const MSG = {
   GET_PENDING:      'GET_PENDING',
   GET_SCRAPED:      'GET_SCRAPED',
   GET_LATEST_SAVED: 'GET_LATEST_SAVED',
+  // Google Sheets OAuth
+  CONNECT_SHEETS:    'CONNECT_SHEETS',
+  DISCONNECT_SHEETS: 'DISCONNECT_SHEETS',
+  GET_SHEETS_STATUS: 'GET_SHEETS_STATUS',
+  // GreenLeaf backend
+  CONNECT_GREENLEAF:    'CONNECT_GREENLEAF',
+  DISCONNECT_GREENLEAF: 'DISCONNECT_GREENLEAF',
+  GET_GREENLEAF_STATUS: 'GET_GREENLEAF_STATUS',
 };
 
 export const STORAGE = {
@@ -14,17 +22,16 @@ export const STORAGE = {
   LATEST_SAVED:    'latestSavedData',
   PENDING_RECORDS: 'pendingRecords',
   TOTAL_SYNCED:    'totalSynced',
-  // sync (config — never put tokens in local)
-  SAVE_MODE:       'saveMode',
-  BACKEND_URL:     'backendUrl',
-  AUTH_TOKEN:      'authToken',
-  SHEETS_ID:       'sheetsId',
-  SHEETS_API_KEY:  'sheetsApiKey',
+  // sync — Google Sheets OAuth
+  SHEETS_CONNECTED:        'sheetsConnected',
+  SHEETS_EMAIL:            'sheetsEmail',
+  SHEETS_SPREADSHEET_ID:   'sheetsSpreadsheetId',
+  SHEETS_SPREADSHEET_NAME: 'sheetsSpreadsheetName',
+  // sync — GreenLeaf backend
+  GREENLEAF_CONNECTED: 'greenleafConnected',
+  GREENLEAF_EMAIL:     'greenleafEmail',
+  BACKEND_URL:         'backendUrl',
+  AUTH_TOKEN:          'authToken',
 };
 
-export const SAVE_MODE = {
-  BACKEND: 'backend',
-  SHEETS:  'sheets',
-};
-
-export const DEFAULT_BACKEND_URL = 'https://api.greenline.in';
+export const DEFAULT_BACKEND_URL = 'https://api.greenleaf.in';

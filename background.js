@@ -1,7 +1,8 @@
 import { MSG, STORAGE, DEFAULT_BACKEND_URL, GOOGLE_SHEETS_CLIENT_ID } from './utils/constants.js';
+import { refreshSheetsTokenIfPossible } from './utils/api.js';
 import { formatRecordForBackend }                          from './utils/date.js';
 import { localGet, localSet, syncGet, syncSet }            from './utils/storage.js';
-import { saveRecord, getGoogleUserEmail, createSheetsSpreadsheet, verifySheetsSpreadsheet } from './utils/api.js';
+import { saveRecord, getGoogleUserEmail, createSheetsSpreadsheet, verifySheetsSpreadsheet, findExistingGreenLeafSheet } from './utils/api.js';
 
 // ─── Validation constants ─────────────────────────────────────────────────────
 
@@ -116,6 +117,8 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         const syncResult = await localGet([STORAGE.TOTAL_SYNCED]);
         await localSet({ [STORAGE.TOTAL_SYNCED]: (syncResult[STORAGE.TOTAL_SYNCED] || 0) + 1 });
         await removeFromPending(formatted.vehicleNo);
+        // Hide this certificate from the extension so user cannot save it again (avoids duplicate entries)
+        await localSet({ [STORAGE.LATEST_SCRAPED]: null });
         notify('Saved', formatted.vehicleNo + ' saved successfully.');
         sendResponse({ success: true });
       } catch (err) {
@@ -171,6 +174,12 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         await saveRecord(formatted);
         await localSet({ [STORAGE.LATEST_SAVED]: formatted });
         await removeFromPending(vehicleNo);
+        // If the current "latest scraped" is this vehicle, clear it so it is hidden (avoids duplicate saves)
+        const latest = await localGet([STORAGE.LATEST_SCRAPED]);
+        const scraped = latest[STORAGE.LATEST_SCRAPED];
+        if (scraped && scraped.vehicleNo === vehicleNo) {
+          await localSet({ [STORAGE.LATEST_SCRAPED]: null });
+        }
         notify('Saved', vehicleNo + ' saved successfully.');
         sendResponse({ success: true });
       } catch (err) {
@@ -275,21 +284,24 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   }
 
   // ── CONNECT_SHEETS ────────────────────────────────────────────────────────
+  // Use the extension's own Google OAuth client (GOOGLE_SHEETS_CLIENT_ID) so the
+  // redirect_uri (chrome.identity.getRedirectURL()) is valid. The backend's client
+  // has web redirect URIs only, so using it causes Error 400: redirect_uri_mismatch.
   if (type === MSG.CONNECT_SHEETS) {
     (async function() {
       try {
-        // 1. Build the OAuth URL and launch the web auth flow.
-        //    launchWebAuthFlow works with a standard Web Application OAuth client
-        //    and doesn't require a Chrome-specific client type or pinned extension ID.
         const redirectUri = chrome.identity.getRedirectURL();
-        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-        authUrl.searchParams.set('client_id',     GOOGLE_SHEETS_CLIENT_ID);
-        authUrl.searchParams.set('redirect_uri',  redirectUri);
-        authUrl.searchParams.set('response_type', 'token');
-        authUrl.searchParams.set('scope', [
+        const scope = [
           'https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/userinfo.email',
-        ].join(' '));
+          'https://www.googleapis.com/auth/drive.metadata.readonly',
+        ].join(' ');
+
+        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+        authUrl.searchParams.set('client_id', GOOGLE_SHEETS_CLIENT_ID);
+        authUrl.searchParams.set('redirect_uri', redirectUri);
+        authUrl.searchParams.set('response_type', 'token');
+        authUrl.searchParams.set('scope', scope);
         authUrl.searchParams.set('prompt', 'select_account');
 
         const responseUrl = await new Promise((resolve, reject) => {
@@ -303,29 +315,32 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
           );
         });
 
-        // 2. Extract the access token from the redirect URL fragment
         const fragment = new URL(responseUrl).hash.slice(1);
-        const token    = new URLSearchParams(fragment).get('access_token');
+        const token = new URLSearchParams(fragment).get('access_token');
         if (!token) throw new Error('No access token returned. Please try again.');
 
-        // 3. Get user email
         const email = await getGoogleUserEmail(token);
 
-        // 4. Use an existing spreadsheet or create a new one
-        let spreadsheetId, title;
-        const existingId = payload && payload.spreadsheetId;
-        if (existingId) {
-          const info = await verifySheetsSpreadsheet(token, existingId);
-          spreadsheetId = existingId;
+        let spreadsheetId, title, isNew;
+        const userProvidedId = payload && payload.spreadsheetId;
+        if (userProvidedId) {
+          const info = await verifySheetsSpreadsheet(token, userProvidedId);
+          spreadsheetId = userProvidedId;
           title = info.title;
+          isNew = false;
         } else {
-          const created = await createSheetsSpreadsheet(token);
-          spreadsheetId = created.spreadsheetId;
-          title = created.title;
+          const existing = await findExistingGreenLeafSheet(token);
+          if (existing) {
+            spreadsheetId = existing.spreadsheetId;
+            title = existing.title;
+            isNew = false;
+          } else {
+            const created = await createSheetsSpreadsheet(token);
+            spreadsheetId = created.spreadsheetId;
+            title = created.title;
+            isNew = true;
+          }
         }
-
-        // 5. Persist connection state (including the access token for future saves)
-        const isNew = !existingId;
         await syncSet({
           [STORAGE.SHEETS_CONNECTED]:        true,
           [STORAGE.SHEETS_EMAIL]:            email,
@@ -354,6 +369,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
           [STORAGE.SHEETS_SPREADSHEET_ID]:   null,
           [STORAGE.SHEETS_SPREADSHEET_NAME]: null,
           [STORAGE.SHEETS_ACCESS_TOKEN]:     null,
+          [STORAGE.SHEETS_REFRESH_TOKEN]:   null,
           [STORAGE.SHEETS_IS_NEW]:           null,
         });
 

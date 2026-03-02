@@ -96,13 +96,13 @@ function updateTrayHandle(glConnected, sheetsConnected) {
   const shPip  = document.getElementById('trayShPip');
   const label  = document.getElementById('trayLabel');
 
-  if (glPip) glPip.style.display = glConnected    ? '' : 'none';
-  if (shPip) shPip.style.display = sheetsConnected ? '' : 'none';
+  if (glPip) glPip.style.display = glConnected ? '' : 'none';
+  if (shPip) shPip.style.display = FEATURE_GOOGLE_SHEETS && sheetsConnected ? '' : 'none';
 
   if (label) {
     const parts = [];
-    if (glConnected)    parts.push('GreenLeaf');
-    if (sheetsConnected) parts.push('Google Sheets');
+    if (glConnected) parts.push('GreenLeaf');
+    if (FEATURE_GOOGLE_SHEETS && sheetsConnected) parts.push('Google Sheets');
     label.textContent = parts.join(' · ');
   }
 }
@@ -123,43 +123,46 @@ function initTrayToggle() {
   });
 }
 
+// Set to true when rolling out Google Sheets
+const FEATURE_GOOGLE_SHEETS = false;
+
 async function initView() {
   try {
     const [sheetsRes, glRes] = await Promise.all([
-      sendMsg(MSG.GET_SHEETS_STATUS),
+      FEATURE_GOOGLE_SHEETS ? sendMsg(MSG.GET_SHEETS_STATUS) : Promise.resolve(null),
       sendMsg(MSG.GET_GREENLEAF_STATUS),
     ]);
 
-    const sheetsOk    = sheetsRes && sheetsRes.connected;
-    const greenleafOk = glRes    && glRes.connected;
+    const sheetsOk    = FEATURE_GOOGLE_SHEETS && sheetsRes && sheetsRes.connected;
+    const greenleafOk = glRes && glRes.connected;
 
-    // Always keep header icons in sync
     updateHeaderIcons(
       greenleafOk, glRes && glRes.email,
       sheetsOk,    sheetsRes && sheetsRes.sheetName
     );
 
-    if (!sheetsOk && !greenleafOk) {
+    // This version: only GreenLeaf required for main view (Sheets feature hidden)
+    if (!greenleafOk) {
       showView('connect');
       return;
     }
 
-    // Update banners
     const sheetsBanner    = document.getElementById('sheetsBanner');
     const greenleafBanner = document.getElementById('greenleafBanner');
 
-    sheetsBanner.style.display    = sheetsOk    ? '' : 'none';
-    greenleafBanner.style.display = greenleafOk ? '' : 'none';
-
-    if (sheetsOk) {
-      document.getElementById('connEmail').textContent = sheetsRes.email || '';
-      const sheetPrefix = sheetsRes.isNew === false ? 'Existing · ' : 'Created · ';
-      document.getElementById('connSheet').textContent = sheetPrefix + (sheetsRes.sheetName || '');
-      const sheetLink = document.getElementById('sheetLink');
-      if (sheetLink && sheetsRes.spreadsheetId) {
-        sheetLink.href = `https://docs.google.com/spreadsheets/d/${sheetsRes.spreadsheetId}`;
+    if (FEATURE_GOOGLE_SHEETS) {
+      sheetsBanner.style.display = sheetsOk ? '' : 'none';
+      if (sheetsOk) {
+        document.getElementById('connEmail').textContent = sheetsRes.email || '';
+        const sheetPrefix = sheetsRes.isNew === false ? 'Existing · ' : 'Created · ';
+        document.getElementById('connSheet').textContent = sheetPrefix + (sheetsRes.sheetName || '');
+        const sheetLink = document.getElementById('sheetLink');
+        if (sheetLink && sheetsRes.spreadsheetId) {
+          sheetLink.href = `https://docs.google.com/spreadsheets/d/${sheetsRes.spreadsheetId}`;
+        }
       }
     }
+    greenleafBanner.style.display = greenleafOk ? '' : 'none';
     if (greenleafOk) {
       document.getElementById('glEmail').textContent = glRes.email || glRes.backendUrl || 'GreenLeaf';
       const glAppLink = document.getElementById('glAppLink');
@@ -168,8 +171,7 @@ async function initView() {
 
     updateTrayHandle(greenleafOk, sheetsOk);
     showView('main');
-    loadScrapedData();
-    loadPendingRecords();
+    loadCurrentAndPending();
     loadLatestSaved();
   } catch (_) {
     showView('connect');
@@ -286,170 +288,109 @@ async function handleDisconnectSheets() {
   }
 }
 
-// ── Current Certificate ────────────────────────────────────────────────────────
-
-async function loadScrapedData() {
-  const body = document.getElementById('currentBody');
-  try {
-    const res = await sendMsg(MSG.GET_SCRAPED);
-    const d   = res && res.data;
-    if (!d || !d.vehicleNo) {
-      body.innerHTML = `
-        <div class="no-data-state">
-          <div class="no-data-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
-              <line x1="16" y1="13" x2="8" y2="13"/>
-              <line x1="16" y1="17" x2="8" y2="17"/>
-            </svg>
-          </div>
-          <p class="no-data-title">No certificate scanned yet</p>
-          <ol class="no-data-steps">
-            <li>Go to <strong>puc.parivahan.gov.in</strong></li>
-            <li>Search for a vehicle and open its certificate</li>
-            <li>Data will appear here automatically</li>
-          </ol>
-          <a class="btn-portal" href="https://puc.parivahan.gov.in" target="_blank">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-              <polyline points="15 3 21 3 21 9"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
-            </svg>
-            Open PUC Portal
-          </a>
-        </div>
-      `;
-      return;
-    }
-
-    const expiring     = isExpiringSoon(d.uptoDate);
-    const uptoDisplay  = formatForDisplay(d.uptoDate);
-    const validDisplay = formatForDisplay(d.validDate);
-    const rate = d.rate ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
-
-    body.innerHTML = `
-      <div class="cert-vehicle">${escapeHtml(d.vehicleNo)}</div>
-      <div class="cert-meta">
-        <div class="meta-cell">
-          <div class="meta-label">Issued</div>
-          <div class="meta-value">${escapeHtml(validDisplay)}</div>
-        </div>
-        <div class="meta-cell${expiring ? ' expiring' : ''}">
-          <div class="meta-label">Expires</div>
-          <div class="meta-value">${escapeHtml(uptoDisplay)}</div>
-        </div>
-        <div class="meta-cell">
-          <div class="meta-label">Fee</div>
-          <div class="meta-value">${rate}</div>
-        </div>
-      </div>
-      <div class="mobile-row">
-        <div class="mobile-wrap">
-          <input type="tel" id="mobileInput" class="field-input"
-                 placeholder="Mobile (optional)" maxlength="10">
-          <div id="mobileError" class="field-error"></div>
-        </div>
-        <button id="saveBtn" class="btn-save">Save</button>
-        <button id="savePendingBtn" class="btn-pending" title="Save without mobile">&#128204;</button>
-      </div>
-      <div id="saveFeedback" class="save-feedback"></div>
-    `;
-
-    document.getElementById('mobileInput').addEventListener('input', (e) => {
-      const err = validateMobile(e.target.value.trim());
-      document.getElementById('mobileError').textContent = err || '';
-      e.target.classList.toggle('has-error', !!err);
-    });
-    document.getElementById('mobileInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('saveBtn').click();
-    });
-    document.getElementById('saveBtn').addEventListener('click', () => saveData(d));
-    document.getElementById('savePendingBtn').addEventListener('click', () => saveAsPending(d));
-
-  } catch (err) {
-    body.innerHTML = `<div class="empty">Error loading data: ${escapeHtml(err.message)}</div>`;
-  }
-}
-
-async function saveData(scrapedData) {
-  const mobileInput = document.getElementById('mobileInput');
-  const mobileError = document.getElementById('mobileError');
-  const feedback    = document.getElementById('saveFeedback');
-  const saveBtn     = document.getElementById('saveBtn');
-
-  const mobile    = mobileInput.value.trim();
-  const mobileErr = validateMobile(mobile);
-  if (mobileErr) {
-    mobileInput.classList.add('has-error');
-    mobileError.textContent = mobileErr;
-    return;
-  }
-
-  saveBtn.disabled = true;
-  saveBtn.textContent = '…';
-  feedback.textContent = '';
-  feedback.className = 'save-feedback';
-
-  try {
-    const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile });
-    if (res && res.success) {
-      feedback.textContent = 'Saved';
-      feedback.className = 'save-feedback ok';
-      mobileInput.value = '';
-      setTimeout(() => { loadLatestSaved(); loadPendingRecords(); }, 400);
-    } else {
-      throw new Error(res && res.error || 'Save failed');
-    }
-  } catch (err) {
-    feedback.textContent = err.message;
-    feedback.className = 'save-feedback err';
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save';
-  }
-}
-
-async function saveAsPending(scrapedData) {
-  const savePendingBtn = document.getElementById('savePendingBtn');
-  const feedback       = document.getElementById('saveFeedback');
-
-  savePendingBtn.disabled = true;
-  feedback.textContent = '';
-  feedback.className = 'save-feedback';
-
-  try {
-    const res = await sendMsg(MSG.SAVE_PENDING, scrapedData);
-    if (res && res.success) {
-      feedback.textContent = 'Saved as pending';
-      feedback.className = 'save-feedback ok';
-      setTimeout(loadPendingRecords, 300);
-    } else {
-      throw new Error(res && res.error || 'Failed');
-    }
-  } catch (err) {
-    feedback.textContent = err.message;
-    feedback.className = 'save-feedback err';
-  } finally {
-    savePendingBtn.disabled = false;
-  }
-}
-
-// ── Pending Records ────────────────────────────────────────────────────────────
+// ── Current & Pending (single source: pending list; current = most recent) ───────
 
 const PENDING_INLINE_LIMIT = 3;
 
-async function loadPendingRecords() {
-  const listEl  = document.getElementById('pendingList');
-  const badgeEl = document.getElementById('pendingBadge');
+function renderNoDataState() {
+  return `
+    <div class="no-data-state">
+      <div class="no-data-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      </div>
+      <p class="no-data-title">No certificate scanned yet</p>
+      <ol class="no-data-steps">
+        <li>Go to <strong>puc.parivahan.gov.in</strong></li>
+        <li>Search for a vehicle and open its certificate</li>
+        <li>Data will appear here automatically</li>
+      </ol>
+      <a class="btn-portal" href="https://puc.parivahan.gov.in" target="_blank">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+        Open PUC Portal
+      </a>
+    </div>
+  `;
+}
+
+function renderCurrentCard(d) {
+  const expiring     = isExpiringSoon(d.uptoDate);
+  const uptoDisplay  = formatForDisplay(d.uptoDate);
+  const validDisplay = formatForDisplay(d.validDate);
+  const rate = d.rate ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
+  return `
+    <div class="cert-vehicle">${escapeHtml(d.vehicleNo)}</div>
+    <div class="cert-meta">
+      <div class="meta-cell">
+        <div class="meta-label">Issued</div>
+        <div class="meta-value">${escapeHtml(validDisplay)}</div>
+      </div>
+      <div class="meta-cell${expiring ? ' expiring' : ''}">
+        <div class="meta-label">Expires</div>
+        <div class="meta-value">${escapeHtml(uptoDisplay)}</div>
+      </div>
+      <div class="meta-cell">
+        <div class="meta-label">Fee</div>
+        <div class="meta-value">${rate}</div>
+      </div>
+    </div>
+    <div class="mobile-row">
+      <div class="mobile-wrap">
+        <input type="tel" id="mobileInput" class="field-input"
+               placeholder="Mobile (optional)" maxlength="10">
+        <div id="mobileError" class="field-error"></div>
+      </div>
+      <button id="saveBtn" class="btn-save">Save</button>
+      <button id="savePendingBtn" class="btn-pending" title="Save without mobile">&#128204;</button>
+    </div>
+    <div id="saveFeedback" class="save-feedback"></div>
+  `;
+}
+
+/**
+ * Load from pending only: show most recent as "current", rest in "pending" list (no duplicate).
+ */
+async function loadCurrentAndPending() {
+  const currentBody = document.getElementById('currentBody');
+  const listEl      = document.getElementById('pendingList');
+  const badgeEl     = document.getElementById('pendingBadge');
+  const card        = document.getElementById('cardPending');
 
   try {
-    const res     = await sendMsg(MSG.GET_PENDING);
+    const res    = await sendMsg(MSG.GET_PENDING);
     const records = (res && res.data) || [];
+    records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
+    const currentRecord = records[0] || null;
+    const restRecords   = records.slice(1);
+
+    // Current: show most recent pending or no-data state
+    if (!currentRecord || !currentRecord.vehicleNo) {
+      currentBody.innerHTML = renderNoDataState();
+    } else {
+      currentBody.innerHTML = renderCurrentCard(currentRecord);
+      document.getElementById('mobileInput').addEventListener('input', (e) => {
+        const err = validateMobile(e.target.value.trim());
+        document.getElementById('mobileError').textContent = err || '';
+        e.target.classList.toggle('has-error', !!err);
+      });
+      document.getElementById('mobileInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('saveBtn').click();
+      });
+      document.getElementById('saveBtn').addEventListener('click', () => saveData(currentRecord));
+      document.getElementById('savePendingBtn').addEventListener('click', () => saveAsPending(currentRecord));
+    }
+
+    // Pending list: only the rest (exclude current so no duplicate)
     badgeEl.textContent = records.length;
-
-    const card = document.getElementById('cardPending');
     if (records.length === 0) {
       if (card) card.style.display = 'none';
       listEl.innerHTML = '<div class="empty">No pending records.</div>';
@@ -457,10 +398,13 @@ async function loadPendingRecords() {
     }
     if (card) card.style.display = '';
 
-    records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (restRecords.length === 0) {
+      listEl.innerHTML = '<div class="empty">No other pending records.</div>';
+      return;
+    }
 
-    const overflow  = records.length - PENDING_INLINE_LIMIT;
-    const toShow    = overflow > 0 ? records.slice(0, PENDING_INLINE_LIMIT) : records;
+    const overflow = restRecords.length - PENDING_INLINE_LIMIT;
+    const toShow   = overflow > 0 ? restRecords.slice(0, PENDING_INLINE_LIMIT) : restRecords;
 
     listEl.innerHTML = toShow.map((r, i) => {
       const uptoDisplay = formatForDisplay(r.uptoDate);
@@ -503,11 +447,77 @@ async function loadPendingRecords() {
         }
       });
     });
-
   } catch (err) {
+    currentBody.innerHTML = `<div class="empty">Error loading data: ${escapeHtml(err.message)}</div>`;
     listEl.innerHTML = `<div class="empty">Error: ${escapeHtml(err.message)}</div>`;
   }
 }
+
+async function saveData(scrapedData) {
+  const mobileInput = document.getElementById('mobileInput');
+  const mobileError = document.getElementById('mobileError');
+  const feedback    = document.getElementById('saveFeedback');
+  const saveBtn     = document.getElementById('saveBtn');
+
+  const mobile    = mobileInput.value.trim();
+  const mobileErr = validateMobile(mobile);
+  if (mobileErr) {
+    mobileInput.classList.add('has-error');
+    mobileError.textContent = mobileErr;
+    return;
+  }
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = '…';
+  feedback.textContent = '';
+  feedback.className = 'save-feedback';
+
+  try {
+    const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile });
+    if (res && res.success) {
+      feedback.textContent = 'Saved';
+      feedback.className = 'save-feedback ok';
+      mobileInput.value = '';
+      // Refresh so the saved certificate is hidden and "No certificate scanned yet" shows
+      setTimeout(() => { loadCurrentAndPending(); loadLatestSaved(); }, 400);
+    } else {
+      throw new Error(res && res.error || 'Save failed');
+    }
+  } catch (err) {
+    feedback.textContent = err.message;
+    feedback.className = 'save-feedback err';
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+  }
+}
+
+async function saveAsPending(scrapedData) {
+  const savePendingBtn = document.getElementById('savePendingBtn');
+  const feedback       = document.getElementById('saveFeedback');
+
+  savePendingBtn.disabled = true;
+  feedback.textContent = '';
+  feedback.className = 'save-feedback';
+
+  try {
+    const res = await sendMsg(MSG.SAVE_PENDING, scrapedData);
+    if (res && res.success) {
+      feedback.textContent = 'Saved as pending';
+      feedback.className = 'save-feedback ok';
+      setTimeout(loadCurrentAndPending, 300);
+    } else {
+      throw new Error(res && res.error || 'Failed');
+    }
+  } catch (err) {
+    feedback.textContent = err.message;
+    feedback.className = 'save-feedback err';
+  } finally {
+    savePendingBtn.disabled = false;
+  }
+}
+
+// ── Complete pending (from list) ───────────────────────────────────────────────
 
 async function completePending(btn) {
   const vehicleNo = btn.dataset.vehicle;
@@ -538,7 +548,7 @@ async function completePending(btn) {
     if (res && res.success) {
       feedback.textContent = 'Saved!';
       feedback.className = 'pending-item-feedback ok';
-      setTimeout(() => { loadPendingRecords(); loadLatestSaved(); }, 400);
+      setTimeout(() => { loadCurrentAndPending(); loadLatestSaved(); }, 400);
     } else {
       throw new Error(res && res.error || 'Failed');
     }
@@ -599,11 +609,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Connect / login view buttons ────────────────────────────────────────────
   document.getElementById('loginBtn').addEventListener('click',         showGreenLeafLogin);
   document.getElementById('backBtn').addEventListener('click',          () => { stopConnectionPoll(); showView('connect'); });
-  document.getElementById('connectSheetsBtn').addEventListener('click', handleConnectSheets);
+  const connectSheetsBtn = document.getElementById('connectSheetsBtn');
+  if (connectSheetsBtn) connectSheetsBtn.addEventListener('click', handleConnectSheets);
 
   // ── Main view disconnect buttons ────────────────────────────────────────────
   document.getElementById('glDisconnectBtn').addEventListener('click',  handleDisconnectGreenLeaf);
-  document.getElementById('disconnectBtn').addEventListener('click',    handleDisconnectSheets);
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  if (disconnectBtn) disconnectBtn.addEventListener('click', handleDisconnectSheets);
 
   // ── Header status icons (always visible) ────────────────────────────────────
   document.getElementById('hdrGlBtn').addEventListener('click', () => {
@@ -611,7 +623,8 @@ document.addEventListener('DOMContentLoaded', () => {
     else showGreenLeafLogin();
   });
 
-  document.getElementById('hdrSheetsBtn').addEventListener('click', () => {
+  const hdrSheetsBtn = document.getElementById('hdrSheetsBtn');
+  if (hdrSheetsBtn) hdrSheetsBtn.addEventListener('click', () => {
     if (_sheetsConnected) handleDisconnectSheets();
     else handleConnectSheets();
   });

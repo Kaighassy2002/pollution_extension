@@ -32,8 +32,10 @@ export const STORAGE = {
   GREENLEAF_EMAIL:     'greenleafEmail',
   BACKEND_URL:         'backendUrl',
   AUTH_TOKEN:          'authToken',
-  // sync — Google Sheets access token (from launchWebAuthFlow)
+  // sync — Google Sheets access token (from launchWebAuthFlow or backend refresh)
   SHEETS_ACCESS_TOKEN: 'sheetsAccessToken',
+  // sync — Google Sheets refresh token (from backend token exchange; used to get new access_token)
+  SHEETS_REFRESH_TOKEN: 'sheetsRefreshToken',
   // sync — true if sheet was newly created, false if existing was linked
   SHEETS_IS_NEW: 'sheetsIsNew',
 };

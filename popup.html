@@ -86,6 +86,9 @@
     .conn-indicator.dot-gl { background: var(--brand); }
     .conn-indicator.dot-sh { background: #2563eb; }
 
+    /* Google Sheets feature hidden for this release */
+    .sheets-feature { display: none !important; }
+
     /* ── Connect view ────────────────────────────────── */
     #viewConnect { padding: 28px 20px 24px; }
 
@@ -696,8 +699,8 @@
         </svg>
         <span class="conn-indicator dot-gl" id="hdrGlDot"></span>
       </button>
-      <!-- Google Sheets link / unlink -->
-      <button class="icon-btn" id="hdrSheetsBtn" title="Connect Google Sheets">
+      <!-- Google Sheets link / unlink (hidden for this release) -->
+      <button class="icon-btn sheets-feature" id="hdrSheetsBtn" title="Connect Google Sheets">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2"/>
           <line x1="3" y1="9" x2="21" y2="9"/>
@@ -729,9 +732,9 @@
       Login to GreenLeaf
     </button>
 
-    <div class="connect-divider">or</div>
+    <div class="connect-divider sheets-feature">or</div>
 
-    <button class="btn-sheets" id="connectSheetsBtn">
+    <button class="btn-sheets sheets-feature" id="connectSheetsBtn">
       <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
         <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -741,7 +744,7 @@
       Connect Google Sheets
     </button>
 
-    <div class="sheets-url-wrap">
+    <div class="sheets-url-wrap sheets-feature">
       <label class="sheets-url-label" for="sheetsUrlInput">Use existing spreadsheet (optional — paste URL or ID)</label>
       <input type="text" id="sheetsUrlInput" class="field-input"
              placeholder="https://docs.google.com/spreadsheets/d/…">
@@ -782,7 +785,7 @@
         <div class="tray-handle-left">
           <div class="tray-pips">
             <span class="tray-pip pip-gl" id="trayGlPip" style="display:none"></span>
-            <span class="tray-pip pip-sh" id="trayShPip" style="display:none"></span>
+            <span class="tray-pip pip-sh sheets-feature" id="trayShPip" style="display:none"></span>
           </div>
           <span class="tray-label" id="trayLabel"></span>
         </div>
@@ -813,8 +816,8 @@
           </div>
         </div>
 
-        <!-- Sheets banner -->
-        <div id="sheetsBanner" class="connection-banner banner-sheets" style="display:none">
+        <!-- Sheets banner (hidden for this release) -->
+        <div id="sheetsBanner" class="connection-banner banner-sheets sheets-feature" style="display:none">
           <div class="conn-left">
             <div class="conn-dot dot-sheets"></div>
             <div class="conn-info">

@@ -333,6 +333,21 @@
       text-overflow: ellipsis;
       display: block;
     }
+    .banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .btn-open-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3px 6px;
+      background: none;
+      border: 1px solid var(--gray-200);
+      border-radius: 4px;
+      color: var(--gray-400);
+      text-decoration: none;
+      transition: color .15s, border-color .15s;
+      flex-shrink: 0;
+    }
+    .btn-open-link:hover { color: var(--gray-700); border-color: var(--gray-500); }
     .btn-disconnect {
       font-size: 11px;
       font-weight: 600;
@@ -511,6 +526,130 @@
       font-style: italic;
     }
 
+    /* ── No-data instructional state ─────────────────── */
+    .no-data-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 18px 12px 14px;
+      text-align: center;
+    }
+    .no-data-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--brand-light);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--brand);
+      margin-bottom: 12px;
+    }
+    .no-data-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--gray-800);
+      margin-bottom: 10px;
+    }
+    .no-data-steps {
+      list-style: none;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+      counter-reset: steps;
+    }
+    .no-data-steps li {
+      counter-increment: steps;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: var(--gray-50);
+      border: 1px solid var(--gray-100);
+      border-radius: 6px;
+      padding: 7px 10px;
+      text-align: left;
+      font-size: 12px;
+      color: var(--gray-600);
+    }
+    .no-data-steps li::before {
+      content: counter(steps);
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--brand-light);
+      color: var(--brand);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .no-data-steps li strong { color: var(--gray-800); }
+    .btn-portal {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      background: var(--brand);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .15s;
+    }
+    .btn-portal:hover { background: var(--brand-dark); }
+
+    /* ── Connection tray ─────────────────────────────── */
+    #connectionTray { border-bottom: 1px solid var(--gray-200); }
+
+    .tray-handle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 5px 14px;
+      background: white;
+      border: none;
+      border-bottom: 1px solid transparent;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background .15s;
+    }
+    .tray-handle:hover { background: var(--gray-50); }
+    #connectionTray.tray-collapsed .tray-handle {
+      border-bottom-color: var(--gray-200);
+    }
+    .tray-handle-left { display: flex; align-items: center; gap: 7px; }
+    .tray-pips { display: flex; gap: 4px; align-items: center; }
+    .tray-pip {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .tray-pip.pip-gl { background: var(--brand); }
+    .tray-pip.pip-sh { background: #3b82f6; }
+    .tray-label { font-size: 11px; font-weight: 600; color: var(--gray-500); }
+    .tray-chevron {
+      color: var(--gray-400);
+      transition: transform 0.22s ease;
+      flex-shrink: 0;
+    }
+    #connectionTray.tray-collapsed .tray-chevron { transform: rotate(180deg); }
+
+    #trayContent {
+      overflow: hidden;
+      max-height: 150px;
+      transition: max-height 0.25s ease;
+    }
+    #connectionTray.tray-collapsed #trayContent { max-height: 0; }
+
     /* ── Toast notification ──────────────────────────── */
     .popup-toast {
       position: fixed;
@@ -637,29 +776,65 @@
   <!-- ── Main View ─────────────────────────────────────────────────── -->
   <div id="viewMain">
 
-    <!-- GreenLeaf banner -->
-    <div id="greenleafBanner" class="connection-banner banner-greenleaf" style="display:none">
-      <div class="conn-left">
-        <div class="conn-dot dot-greenleaf"></div>
-        <div class="conn-info">
-          <span class="conn-label">GreenLeaf</span>
-          <span class="conn-email" id="glEmail"></span>
+    <!-- Connection tray (collapsible) -->
+    <div id="connectionTray">
+      <button class="tray-handle" id="trayToggle" title="Toggle connection details">
+        <div class="tray-handle-left">
+          <div class="tray-pips">
+            <span class="tray-pip pip-gl" id="trayGlPip" style="display:none"></span>
+            <span class="tray-pip pip-sh" id="trayShPip" style="display:none"></span>
+          </div>
+          <span class="tray-label" id="trayLabel"></span>
         </div>
-      </div>
-      <button class="btn-disconnect" id="glDisconnectBtn">Disconnect</button>
-    </div>
+        <svg class="tray-chevron" id="trayChevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="18 15 12 9 6 15"/>
+        </svg>
+      </button>
 
-    <!-- Sheets banner -->
-    <div id="sheetsBanner" class="connection-banner banner-sheets" style="display:none">
-      <div class="conn-left">
-        <div class="conn-dot dot-sheets"></div>
-        <div class="conn-info">
-          <span class="conn-label">Google Sheets</span>
-          <span class="conn-email" id="connEmail"></span>
-          <span class="conn-sheet" id="connSheet"></span>
+      <div id="trayContent">
+        <!-- GreenLeaf banner -->
+        <div id="greenleafBanner" class="connection-banner banner-greenleaf" style="display:none">
+          <div class="conn-left">
+            <div class="conn-dot dot-greenleaf"></div>
+            <div class="conn-info">
+              <span class="conn-label">GreenLeaf</span>
+              <span class="conn-email" id="glEmail"></span>
+            </div>
+          </div>
+          <div class="banner-actions">
+            <a class="btn-open-link" id="glAppLink" href="#" target="_blank" title="Open GreenLeaf app">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+            <button class="btn-disconnect" id="glDisconnectBtn">Disconnect</button>
+          </div>
+        </div>
+
+        <!-- Sheets banner -->
+        <div id="sheetsBanner" class="connection-banner banner-sheets" style="display:none">
+          <div class="conn-left">
+            <div class="conn-dot dot-sheets"></div>
+            <div class="conn-info">
+              <span class="conn-label">Google Sheets</span>
+              <span class="conn-email" id="connEmail"></span>
+              <span class="conn-sheet" id="connSheet"></span>
+            </div>
+          </div>
+          <div class="banner-actions">
+            <a class="btn-open-link" id="sheetLink" href="#" target="_blank" title="Open spreadsheet">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+            <button class="btn-disconnect" id="disconnectBtn">Disconnect</button>
+          </div>
         </div>
       </div>
-      <button class="btn-disconnect" id="disconnectBtn">Disconnect</button>
     </div>
 
     <div class="cards">

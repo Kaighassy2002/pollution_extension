@@ -49,9 +49,9 @@ function showToast(msg, type = '', ms = 2500) {
 // ── View routing ───────────────────────────────────────────────────────────────
 
 function showView(name) {
-  document.getElementById('viewConnect').style.display        = name === 'connect'        ? '' : 'none';
-  document.getElementById('viewGreenLeafLogin').style.display = name === 'greenleafLogin' ? '' : 'none';
-  document.getElementById('viewMain').style.display           = name === 'main'           ? '' : 'none';
+  document.getElementById('viewConnect').style.display        = name === 'connect'        ? 'block' : 'none';
+  document.getElementById('viewGreenLeafLogin').style.display = name === 'greenleafLogin' ? 'block' : 'none';
+  document.getElementById('viewMain').style.display           = name === 'main'           ? 'block' : 'none';
 }
 
 // ── Header icon state ─────────────────────────────────────────────────────────
@@ -89,6 +89,40 @@ function updateHeaderIcons(glConnected, glEmail, sheetsConnected, sheetName) {
   }
 }
 
+// ── Connection tray ────────────────────────────────────────────────────────────
+
+function updateTrayHandle(glConnected, sheetsConnected) {
+  const glPip  = document.getElementById('trayGlPip');
+  const shPip  = document.getElementById('trayShPip');
+  const label  = document.getElementById('trayLabel');
+
+  if (glPip) glPip.style.display = glConnected    ? '' : 'none';
+  if (shPip) shPip.style.display = sheetsConnected ? '' : 'none';
+
+  if (label) {
+    const parts = [];
+    if (glConnected)    parts.push('GreenLeaf');
+    if (sheetsConnected) parts.push('Google Sheets');
+    label.textContent = parts.join(' · ');
+  }
+}
+
+function initTrayToggle() {
+  const tray   = document.getElementById('connectionTray');
+  const toggle = document.getElementById('trayToggle');
+  if (!tray || !toggle) return;
+
+  // Restore saved collapsed state
+  chrome.storage.local.get(['trayCollapsed'], (r) => {
+    if (r.trayCollapsed) tray.classList.add('tray-collapsed');
+  });
+
+  toggle.addEventListener('click', () => {
+    const collapsed = tray.classList.toggle('tray-collapsed');
+    chrome.storage.local.set({ trayCollapsed: collapsed });
+  });
+}
+
 async function initView() {
   try {
     const [sheetsRes, glRes] = await Promise.all([
@@ -121,11 +155,18 @@ async function initView() {
       document.getElementById('connEmail').textContent = sheetsRes.email || '';
       const sheetPrefix = sheetsRes.isNew === false ? 'Existing · ' : 'Created · ';
       document.getElementById('connSheet').textContent = sheetPrefix + (sheetsRes.sheetName || '');
+      const sheetLink = document.getElementById('sheetLink');
+      if (sheetLink && sheetsRes.spreadsheetId) {
+        sheetLink.href = `https://docs.google.com/spreadsheets/d/${sheetsRes.spreadsheetId}`;
+      }
     }
     if (greenleafOk) {
       document.getElementById('glEmail').textContent = glRes.email || glRes.backendUrl || 'GreenLeaf';
+      const glAppLink = document.getElementById('glAppLink');
+      if (glAppLink) glAppLink.href = APP_URL;
     }
 
+    updateTrayHandle(greenleafOk, sheetsOk);
     showView('main');
     loadScrapedData();
     loadPendingRecords();
@@ -253,7 +294,32 @@ async function loadScrapedData() {
     const res = await sendMsg(MSG.GET_SCRAPED);
     const d   = res && res.data;
     if (!d || !d.vehicleNo) {
-      body.innerHTML = '<div class="empty">Open a PUC certificate page to scan data.</div>';
+      body.innerHTML = `
+        <div class="no-data-state">
+          <div class="no-data-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+          </div>
+          <p class="no-data-title">No certificate scanned yet</p>
+          <ol class="no-data-steps">
+            <li>Go to <strong>puc.parivahan.gov.in</strong></li>
+            <li>Search for a vehicle and open its certificate</li>
+            <li>Data will appear here automatically</li>
+          </ol>
+          <a class="btn-portal" href="https://puc.parivahan.gov.in" target="_blank">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Open PUC Portal
+          </a>
+        </div>
+      `;
       return;
     }
 
@@ -383,10 +449,13 @@ async function loadPendingRecords() {
 
     badgeEl.textContent = records.length;
 
+    const card = document.getElementById('cardPending');
     if (records.length === 0) {
+      if (card) card.style.display = 'none';
       listEl.innerHTML = '<div class="empty">No pending records.</div>';
       return;
     }
+    if (card) card.style.display = '';
 
     records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
@@ -492,10 +561,14 @@ async function loadLatestSaved() {
     const d   = res && res.data;
 
     if (!d || !d.vehicleNo) {
+      const card = document.getElementById('cardSaved');
+      if (card) card.style.display = 'none';
       savedBody.innerHTML = '<div class="empty">Nothing saved yet.</div>';
       if (savedCheck) savedCheck.style.display = 'none';
       return;
     }
+    const card = document.getElementById('cardSaved');
+    if (card) card.style.display = '';
 
     const uptoDisplay = formatForDisplay(d.validUpto || d.uptoDate);
     const rate        = d.rate != null ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
@@ -520,6 +593,7 @@ async function loadLatestSaved() {
 
 document.addEventListener('DOMContentLoaded', () => {
   showView('connect');
+  initTrayToggle();
   initView();
 
   // ── Connect / login view buttons ────────────────────────────────────────────

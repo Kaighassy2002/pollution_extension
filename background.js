@@ -367,16 +367,17 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
 
   // ── GET_SHEETS_STATUS ─────────────────────────────────────────────────────
   if (type === MSG.GET_SHEETS_STATUS) {
-    syncGet([STORAGE.SHEETS_CONNECTED, STORAGE.SHEETS_EMAIL, STORAGE.SHEETS_SPREADSHEET_NAME, STORAGE.SHEETS_IS_NEW])
+    syncGet([STORAGE.SHEETS_CONNECTED, STORAGE.SHEETS_EMAIL, STORAGE.SHEETS_SPREADSHEET_NAME, STORAGE.SHEETS_IS_NEW, STORAGE.SHEETS_SPREADSHEET_ID])
       .then((sync) => {
         sendResponse({
-          connected: !!sync[STORAGE.SHEETS_CONNECTED],
-          email:     sync[STORAGE.SHEETS_EMAIL]            || null,
-          sheetName: sync[STORAGE.SHEETS_SPREADSHEET_NAME] || null,
-          isNew:     sync[STORAGE.SHEETS_IS_NEW]           ?? null,
+          connected:     !!sync[STORAGE.SHEETS_CONNECTED],
+          email:         sync[STORAGE.SHEETS_EMAIL]            || null,
+          sheetName:     sync[STORAGE.SHEETS_SPREADSHEET_NAME] || null,
+          isNew:         sync[STORAGE.SHEETS_IS_NEW]           ?? null,
+          spreadsheetId: sync[STORAGE.SHEETS_SPREADSHEET_ID]  || null,
         });
       })
-      .catch(() => sendResponse({ connected: false, email: null, sheetName: null, isNew: null }));
+      .catch(() => sendResponse({ connected: false, email: null, sheetName: null, isNew: null, spreadsheetId: null }));
     return true;
   }
 

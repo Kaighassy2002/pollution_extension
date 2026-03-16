@@ -1,31 +1,53 @@
 # CLAUDE.md — GreenLine Extension
 
-Chrome MV3 extension that scrapes vehicle PUC certificate data from `puc.parivahan.gov.in` and saves it to either Google Sheets or the GreenLine backend.
+Cross-browser MV3 extension (Chrome, Firefox, Opera) that scrapes vehicle PUC certificate data from `puc.parivahan.gov.in` and saves it to either Google Sheets or the GreenLine backend.
 
 ## Stack
-- Chrome Manifest V3, plain JavaScript (no build step)
+- Manifest V3, plain JavaScript
 - `chrome.storage.sync` for config, `chrome.storage.local` for pending queue
-- No npm dependencies beyond dev tooling (eslint, prettier)
+- Build step via `build.js` (Node.js, no external bundler) — produces `dist/<browser>/`
+- Dev dependency: `web-ext` (Mozilla) for Firefox live reload and packaging
 
 ## Directory Structure
 
 ```
 pollution_extension/
-├── manifest.json
 ├── background.js          # service worker — all state + API logic
 ├── content.js             # scraper — runs on PUC portal page
 ├── popup.html / popup.js  # daily-use staff UI
 ├── options.html / options.js  # settings: save mode, backend URL
+├── pending.html / pending.js  # full-page pending records manager
 ├── utils/
 │   ├── constants.js       # MSG types, storage keys
 │   ├── storage.js         # chrome.storage helpers
 │   ├── api.js             # backend / Google Sheets client
 │   └── date.js            # DD/MM/YYYY ↔ ISO 8601 conversion
-└── icons/
-    ├── icon16.png
-    ├── icon48.png
-    └── icon128.png
+├── icons/
+│
+├── manifests/             # browser-specific manifests (source of truth)
+│   ├── chrome.json        # MV3 + oauth2 + externally_connectable
+│   ├── firefox.json       # MV3 + browser_specific_settings (no oauth2 key)
+│   └── opera.json         # MV3 + oauth2 + externally_connectable
+│
+├── build.js               # copies root → dist/<browser>/ + injects manifest
+├── package.json           # build:*, package:* scripts
+└── manifest.json          # Chrome copy at root — for quick unpacked dev only
 ```
+
+## Build & Package
+
+```bash
+npm install               # installs web-ext
+
+node build.js chrome      # → dist/chrome/
+node build.js firefox     # → dist/firefox/
+node build.js opera       # → dist/opera/
+node build.js             # all three
+
+npm run package:all       # → packages/greenleaf-{chrome,firefox,opera}.zip
+```
+
+See `README.md` for full publishing instructions per store.
 
 ## Save Mode Architecture
 
@@ -87,9 +109,9 @@ Input validation before backend submission:
 
 ## Permissions Policy
 
-Current: `storage`, `notifications`. Host permission locked to the PUC portal URL only.
+Current: `storage`, `notifications`, `identity`, `tabs`. Host permission locked to the PUC portal URL only.
 
-Never add: `tabs`, `webRequest`, `history`, `browsingData`, `<all_urls>`. Any new permission requires manifest change + Chrome Web Store re-review.
+Never add: `webRequest`, `history`, `browsingData`, `<all_urls>`. Any new permission requires changes to all three manifests in `manifests/` and re-review on every store.
 
 ## UI Conventions (Popup)
 

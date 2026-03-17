@@ -351,6 +351,14 @@ function renderCurrentCard(d) {
       <button id="saveBtn" class="btn-save">Save</button>
       <button id="savePendingBtn" class="btn-pending" title="Save without mobile">&#128204;</button>
     </div>
+    <div class="outcome-row">
+      <button id="outcomePassBtn" class="btn-outcome active">Passed</button>
+      <button id="outcomeFailBtn" class="btn-outcome fail">Failed</button>
+    </div>
+    <div id="failReasonRow" style="display:none">
+      <input type="text" id="failReasonInput" class="field-input"
+             placeholder="Fail reason (optional)" maxlength="200">
+    </div>
     <div id="saveFeedback" class="save-feedback"></div>
   `;
 }
@@ -387,6 +395,8 @@ async function loadCurrentAndPending() {
       });
       document.getElementById('saveBtn').addEventListener('click', () => saveData(currentRecord));
       document.getElementById('savePendingBtn').addEventListener('click', () => saveAsPending(currentRecord));
+      document.getElementById('outcomePassBtn').addEventListener('click', () => setCurrentOutcome('PASS'));
+      document.getElementById('outcomeFailBtn').addEventListener('click', () => setCurrentOutcome('FAIL'));
     }
 
     // Pending list: only the rest (exclude current so no duplicate)
@@ -453,6 +463,12 @@ async function loadCurrentAndPending() {
   }
 }
 
+function setCurrentOutcome(outcome) {
+  document.getElementById('outcomePassBtn').classList.toggle('active', outcome === 'PASS');
+  document.getElementById('outcomeFailBtn').classList.toggle('active', outcome === 'FAIL');
+  document.getElementById('failReasonRow').style.display = outcome === 'FAIL' ? '' : 'none';
+}
+
 async function saveData(scrapedData) {
   const mobileInput = document.getElementById('mobileInput');
   const mobileError = document.getElementById('mobileError');
@@ -472,8 +488,12 @@ async function saveData(scrapedData) {
   feedback.textContent = '';
   feedback.className = 'save-feedback';
 
+  const isFailSelected = document.getElementById('outcomeFailBtn')?.classList.contains('active');
+  const outcome    = isFailSelected ? 'FAIL' : 'PASS';
+  const failReason = isFailSelected ? (document.getElementById('failReasonInput')?.value.trim() || null) : null;
+
   try {
-    const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile });
+    const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile, outcome, failReason });
     if (res && res.success) {
       feedback.textContent = 'Saved';
       feedback.className = 'save-feedback ok';

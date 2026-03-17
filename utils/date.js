@@ -74,12 +74,17 @@ export function formatRecordForBackend(record) {
     throw new Error(`Implausible rate value: ${cleanRate}`);
   }
 
+  const outcome    = record.outcome === 'FAIL' ? 'FAIL' : 'PASS';
+  const failReason = outcome === 'FAIL' ? (record.failReason || null) : null;
+
   return {
     vehicleNo,
     mobile,
     validFrom,
     validUpto,
-    rate:     cleanRate,
-    verified: false,
+    rate:      cleanRate,
+    outcome,
+    failReason,
+    verified:  false,
   };
 }

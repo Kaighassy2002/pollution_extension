@@ -1,0 +1,31 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="ms-fabric-cli" />
+          <option value="azure-ai-vision-imageanalysis" />
+          <option value="boto3" />
+          <option value="botocore" />
+          <option value="jsonpatch" />
+          <option value="jsonpointer" />
+          <option value="langchain" />
+          <option value="langchain-core" />
+          <option value="langchain-openai" />
+          <option value="langgraph" />
+          <option value="langgraph-checkpoint" />
+          <option value="langgraph-prebuilt" />
+          <option value="langgraph-sdk" />
+          <option value="langsmith" />
+          <option value="orjson" />
+          <option value="ormsgpack" />
+          <option value="regex" />
+          <option value="requests-toolbelt" />
+          <option value="s3transfer" />
+          <option value="tiktoken" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

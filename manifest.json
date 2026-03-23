@@ -13,17 +13,17 @@
     "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml",
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",
-    "https://api.greenleaf.in/*",
+    "https://greenleaf-backend-vl8v.onrender.com/*",
     "http://localhost:8000/*"
   ],
   "externally_connectable": {
     "matches": [
-      "https://app.greenleaf.in/*",
+      "https://greenleaf-frontend.vercel.app/*",
       "http://localhost:3000/*"
     ]
   },
   "oauth2": {
-    "client_id": "YOUR_CHROME_APP_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "325807504865-0m67nprugt1drlrmmr09sal1qlplo5om.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/userinfo.email"

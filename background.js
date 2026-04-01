@@ -19,6 +19,7 @@ const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/;
  */
 function isTrustedSender(sender) {
   if (!sender.tab) return true; // extension-internal (popup / options / background)
+  if (sender.id === chrome.runtime.id) return true; // extension pages opened as tabs (e.g. pending.html)
   return sender.origin === PUC_ORIGIN ||
          (typeof sender.url === 'string' && sender.url.startsWith(PUC_ORIGIN));
 }
@@ -209,6 +210,21 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
     localGet([STORAGE.PENDING_RECORDS]).then(function(r) {
       sendResponse({ data: r[STORAGE.PENDING_RECORDS] || [] });
     });
+    return true;
+  }
+
+  // ── DISCARD_PENDING ───────────────────────────────────────────────────────
+  if (type === MSG.DISCARD_PENDING) {
+    (async function() {
+      try {
+        const vehicleNo = payload && payload.vehicleNo;
+        if (!vehicleNo) throw new Error('vehicleNo required');
+        await removeFromPending(vehicleNo);
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
     return true;
   }
 

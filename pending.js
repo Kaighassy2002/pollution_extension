@@ -58,6 +58,7 @@ function renderRecord(r, idx) {
         <div class="field-error" id="err${idx}"></div>
       </div>
       <button class="btn-save" data-vehicle="${escapeHtml(r.vehicleNo)}" data-idx="${idx}">Save</button>
+      <button class="btn-discard" data-vehicle="${escapeHtml(r.vehicleNo)}" title="Discard this record">&#x2715;</button>
     </div>
     <div class="record-feedback" id="fb${idx}"></div>
   `;
@@ -77,6 +78,9 @@ function renderRecord(r, idx) {
 
   // Save button
   card.querySelector('.btn-save').addEventListener('click', () => saveRecord(card, r.vehicleNo, input, idx));
+
+  // Discard button
+  card.querySelector('.btn-discard').addEventListener('click', () => discardRecord(card, r.vehicleNo));
 
   return card;
 }
@@ -129,6 +133,20 @@ async function saveRecord(card, vehicleNo, input, idx) {
     card.classList.remove('saving');
     saveBtn.disabled    = false;
     saveBtn.textContent = 'Save';
+  }
+}
+
+async function discardRecord(card, vehicleNo) {
+  const btn = card.querySelector('.btn-discard');
+  if (btn) btn.disabled = true;
+  try {
+    await sendMsg(MSG.DISCARD_PENDING, { vehicleNo });
+    card.style.transition = 'opacity 0.3s, transform 0.3s';
+    card.style.opacity    = '0';
+    card.style.transform  = 'translateX(12px)';
+    setTimeout(() => { card.remove(); updateCount(); }, 300);
+  } catch (err) {
+    if (btn) btn.disabled = false;
   }
 }
 

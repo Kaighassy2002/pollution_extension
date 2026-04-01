@@ -350,14 +350,7 @@ function renderCurrentCard(d) {
       </div>
       <button id="saveBtn" class="btn-save">Save</button>
       <button id="savePendingBtn" class="btn-pending" title="Save without mobile">&#128204;</button>
-    </div>
-    <div class="outcome-row">
-      <button id="outcomePassBtn" class="btn-outcome active">Passed</button>
-      <button id="outcomeFailBtn" class="btn-outcome fail">Failed</button>
-    </div>
-    <div id="failReasonRow" style="display:none">
-      <input type="text" id="failReasonInput" class="field-input"
-             placeholder="Fail reason (optional)" maxlength="200">
+      <button id="discardBtn" class="btn-discard" title="Discard this record">&#x2715;</button>
     </div>
     <div id="saveFeedback" class="save-feedback"></div>
   `;
@@ -395,8 +388,7 @@ async function loadCurrentAndPending() {
       });
       document.getElementById('saveBtn').addEventListener('click', () => saveData(currentRecord));
       document.getElementById('savePendingBtn').addEventListener('click', () => saveAsPending(currentRecord));
-      document.getElementById('outcomePassBtn').addEventListener('click', () => setCurrentOutcome('PASS'));
-      document.getElementById('outcomeFailBtn').addEventListener('click', () => setCurrentOutcome('FAIL'));
+      document.getElementById('discardBtn').addEventListener('click', () => discardRecord(currentRecord));
     }
 
     // Pending list: only the rest (exclude current so no duplicate)
@@ -463,12 +455,6 @@ async function loadCurrentAndPending() {
   }
 }
 
-function setCurrentOutcome(outcome) {
-  document.getElementById('outcomePassBtn').classList.toggle('active', outcome === 'PASS');
-  document.getElementById('outcomeFailBtn').classList.toggle('active', outcome === 'FAIL');
-  document.getElementById('failReasonRow').style.display = outcome === 'FAIL' ? '' : 'none';
-}
-
 async function saveData(scrapedData) {
   const mobileInput = document.getElementById('mobileInput');
   const mobileError = document.getElementById('mobileError');
@@ -488,9 +474,8 @@ async function saveData(scrapedData) {
   feedback.textContent = '';
   feedback.className = 'save-feedback';
 
-  const isFailSelected = document.getElementById('outcomeFailBtn')?.classList.contains('active');
-  const outcome    = isFailSelected ? 'FAIL' : 'PASS';
-  const failReason = isFailSelected ? (document.getElementById('failReasonInput')?.value.trim() || null) : null;
+  const outcome    = scrapedData.uptoDate ? 'PASS' : 'FAIL';
+  const failReason = null;
 
   try {
     const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile, outcome, failReason });
@@ -509,6 +494,19 @@ async function saveData(scrapedData) {
   } finally {
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save';
+  }
+}
+
+async function discardRecord(scrapedData) {
+  const btn = document.getElementById('discardBtn');
+  if (btn) btn.disabled = true;
+  try {
+    await sendMsg(MSG.DISCARD_PENDING, { vehicleNo: scrapedData.vehicleNo });
+    loadCurrentAndPending();
+  } catch (err) {
+    const feedback = document.getElementById('saveFeedback');
+    if (feedback) { feedback.textContent = err.message; feedback.className = 'save-feedback err'; }
+    if (btn) btn.disabled = false;
   }
 }
 

@@ -175,6 +175,20 @@
     .btn-save:hover { background: var(--brand-dark); }
     .btn-save:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
 
+    .btn-discard {
+      padding: 8px 12px;
+      background: white;
+      color: var(--red);
+      border: 1.5px solid var(--red);
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .15s;
+    }
+    .btn-discard:hover { background: var(--red-light); }
+    .btn-discard:disabled { opacity: .5; cursor: not-allowed; }
+
     .record-feedback {
       margin-top: 6px;
       font-size: 12px;

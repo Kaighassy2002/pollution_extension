@@ -56,7 +56,7 @@
     vehicleResult = scrapeByRowLabel('Registration No');
   }
 
-  var validDateResult = scrapeField('#j_idt24', [
+  var validDateResult = scrapeField('#j_idt23', [
     '#j_idt17',
     '[id$="validDate"]',
     '[id*="issueDate"]',
@@ -66,7 +66,7 @@
     validDateResult = scrapeByRowLabel('Date');
   }
 
-  var uptoDateResult = scrapeField('#j_idt33', [
+  var uptoDateResult = scrapeField('#j_idt31', [
     '#j_idt25',
     '[id$="uptoDate"]',
     '[id*="expiryDate"]',

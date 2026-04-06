@@ -47,9 +47,9 @@ export const STORAGE = {
   TELEMETRY_BUFFER: 'telemetryBuffer',
 };
 
-export const DEFAULT_BACKEND_URL = 'http://localhost:8000';
+export const DEFAULT_BACKEND_URL = 'https://greenleaf-backend-vl8v.onrender.com';
 // Frontend app URL — must match externally_connectable in manifest.json
-export const APP_URL = 'http://localhost:3000';
+export const APP_URL = 'https://greenleaf-frontend.vercel.app/';
 
 // Google OAuth Web Application client ID — used for the Sheets connect flow.
 // Create at: Google Cloud Console → APIs & Services → Credentials → Web Application.

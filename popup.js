@@ -22,6 +22,9 @@ function escapeHtml(text) {
   return d.innerHTML;
 }
 
+const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/;
+const DATE_RE    = /^\d{2}\/\d{2}\/\d{4}$/;
+
 function validateMobile(value) {
   if (!value) return null;
   if (!/^[6-9]\d{9}$/.test(value)) return 'Must be 10 digits starting with 6–9';
@@ -323,23 +326,45 @@ function renderNoDataState() {
 
 function renderCurrentCard(d) {
   const expiring     = isExpiringSoon(d.uptoDate);
-  const uptoDisplay  = formatForDisplay(d.uptoDate);
-  const validDisplay = formatForDisplay(d.validDate);
-  const rate = d.rate ? `₹${escapeHtml(String(d.rate))}` : 'N/A';
+  const validDisplay = d.validDate ? formatForDisplay(d.validDate) : '';
+  const uptoDisplay  = d.uptoDate  ? formatForDisplay(d.uptoDate)  : '';
+  const rateDisplay  = d.rate ? String(d.rate) : '';
   return `
-    <div class="cert-vehicle">${escapeHtml(d.vehicleNo)}</div>
-    <div class="cert-meta">
-      <div class="meta-cell">
-        <div class="meta-label">Issued</div>
-        <div class="meta-value">${escapeHtml(validDisplay)}</div>
+    <p class="verify-hint">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      Verify scraped data before saving
+    </p>
+    <div class="edit-field">
+      <label class="edit-label" for="editVehicleNo">Vehicle No.</label>
+      <input type="text" id="editVehicleNo" class="field-input edit-vehicle-input"
+             value="${escapeHtml(d.vehicleNo || '')}"
+             placeholder="e.g. MH12AB1234" maxlength="15" autocomplete="off" spellcheck="false">
+      <div id="vehicleNoError" class="field-error"></div>
+    </div>
+    <div class="edit-grid">
+      <div class="edit-field">
+        <label class="edit-label" for="editValidDate">Issued</label>
+        <input type="text" id="editValidDate" class="field-input"
+               value="${escapeHtml(validDisplay)}"
+               placeholder="DD/MM/YYYY" maxlength="10">
+        <div id="validDateError" class="field-error"></div>
       </div>
-      <div class="meta-cell${expiring ? ' expiring' : ''}">
-        <div class="meta-label">Expires</div>
-        <div class="meta-value">${escapeHtml(uptoDisplay)}</div>
+      <div class="edit-field">
+        <label class="edit-label" for="editUptoDate">Expires</label>
+        <input type="text" id="editUptoDate" class="field-input${expiring ? ' expiring-input' : ''}"
+               value="${escapeHtml(uptoDisplay)}"
+               placeholder="DD/MM/YYYY" maxlength="10">
+        <div id="uptoDateError" class="field-error"></div>
       </div>
-      <div class="meta-cell">
-        <div class="meta-label">Fee</div>
-        <div class="meta-value">${rate}</div>
+      <div class="edit-field">
+        <label class="edit-label" for="editRate">Fee (₹)</label>
+        <input type="text" id="editRate" class="field-input"
+               value="${escapeHtml(rateDisplay)}"
+               placeholder="0" maxlength="8">
+        <div id="rateError" class="field-error"></div>
       </div>
     </div>
     <div class="mobile-row">
@@ -378,6 +403,14 @@ async function loadCurrentAndPending() {
       currentBody.innerHTML = renderNoDataState();
     } else {
       currentBody.innerHTML = renderCurrentCard(currentRecord);
+      document.getElementById('editVehicleNo').addEventListener('input', (e) => {
+        const pos = e.target.selectionStart;
+        e.target.value = e.target.value.toUpperCase();
+        e.target.setSelectionRange(pos, pos);
+        const err = VEHICLE_RE.test(e.target.value.replace(/\s+/g, ' ').trim()) ? '' : 'Invalid format — e.g. MH12AB1234';
+        document.getElementById('vehicleNoError').textContent = err;
+        e.target.classList.toggle('has-error', !!err && e.target.value.length > 0);
+      });
       document.getElementById('mobileInput').addEventListener('input', (e) => {
         const err = validateMobile(e.target.value.trim());
         document.getElementById('mobileError').textContent = err || '';
@@ -456,31 +489,88 @@ async function loadCurrentAndPending() {
 }
 
 async function saveData(scrapedData) {
-  const mobileInput = document.getElementById('mobileInput');
-  const mobileError = document.getElementById('mobileError');
-  const feedback    = document.getElementById('saveFeedback');
-  const saveBtn     = document.getElementById('saveBtn');
+  const vehicleNoInput = document.getElementById('editVehicleNo');
+  const validDateInput = document.getElementById('editValidDate');
+  const uptoDateInput  = document.getElementById('editUptoDate');
+  const rateInput      = document.getElementById('editRate');
+  const mobileInput    = document.getElementById('mobileInput');
+  const mobileError    = document.getElementById('mobileError');
+  const feedback       = document.getElementById('saveFeedback');
+  const saveBtn        = document.getElementById('saveBtn');
 
+  const vehicleNo = vehicleNoInput.value.trim().toUpperCase().replace(/\s+/g, ' ');
+  const validDate = validDateInput.value.trim() || null;
+  const uptoDate  = uptoDateInput.value.trim()  || null;
+  const rate      = rateInput.value.trim();
   const mobile    = mobileInput.value.trim();
+
+  // Validate all editable fields before submitting
+  let hasError = false;
+
+  if (!VEHICLE_RE.test(vehicleNo)) {
+    document.getElementById('vehicleNoError').textContent = 'Invalid format — e.g. MH12AB1234';
+    vehicleNoInput.classList.add('has-error');
+    hasError = true;
+  } else {
+    document.getElementById('vehicleNoError').textContent = '';
+    vehicleNoInput.classList.remove('has-error');
+  }
+
+  if (validDate && !DATE_RE.test(validDate)) {
+    document.getElementById('validDateError').textContent = 'Use DD/MM/YYYY';
+    validDateInput.classList.add('has-error');
+    hasError = true;
+  } else {
+    document.getElementById('validDateError').textContent = '';
+    validDateInput.classList.remove('has-error');
+  }
+
+  if (uptoDate && !DATE_RE.test(uptoDate)) {
+    document.getElementById('uptoDateError').textContent = 'Use DD/MM/YYYY';
+    uptoDateInput.classList.add('has-error');
+    hasError = true;
+  } else {
+    document.getElementById('uptoDateError').textContent = '';
+    uptoDateInput.classList.remove('has-error');
+  }
+
   const mobileErr = validateMobile(mobile);
   if (mobileErr) {
     mobileInput.classList.add('has-error');
     mobileError.textContent = mobileErr;
-    return;
+    hasError = true;
+  } else {
+    mobileInput.classList.remove('has-error');
+    mobileError.textContent = '';
   }
+
+  if (hasError) return;
+
+  // Track whether staff corrected any scraped value.
+  // Normalise both sides of each comparison to the same type before diffing:
+  // scrapedData.rate may be 0 (integer) while the input yields "" for a blank
+  // field — without normalisation this would produce a false wasEdited=true.
+  const origVehicle = (scrapedData.vehicleNo || '').toUpperCase().replace(/\s+/g, ' ');
+  const origRate    = scrapedData.rate != null && scrapedData.rate !== '' ? String(scrapedData.rate) : '';
+  const wasEdited = vehicleNo !== origVehicle
+    || validDate !== (scrapedData.validDate || null)
+    || uptoDate  !== (scrapedData.uptoDate  || null)
+    || rate      !== origRate;
 
   saveBtn.disabled = true;
   saveBtn.textContent = '…';
   feedback.textContent = '';
   feedback.className = 'save-feedback';
 
-  const outcome    = scrapedData.uptoDate ? 'PASS' : 'FAIL';
+  const outcome    = uptoDate ? 'PASS' : 'FAIL';
   const failReason = null;
 
   try {
-    const res = await sendMsg(MSG.SAVE_DATA, { ...scrapedData, mobile, outcome, failReason });
+    const res = await sendMsg(MSG.SAVE_DATA, {
+      ...scrapedData, vehicleNo, validDate, uptoDate, rate, mobile, outcome, failReason, wasEdited,
+    });
     if (res && res.success) {
-      feedback.textContent = 'Saved';
+      feedback.textContent = wasEdited ? 'Saved (edited)' : 'Saved';
       feedback.className = 'save-feedback ok';
       mobileInput.value = '';
       // Refresh so the saved certificate is hidden and "No certificate scanned yet" shows
@@ -514,12 +604,19 @@ async function saveAsPending(scrapedData) {
   const savePendingBtn = document.getElementById('savePendingBtn');
   const feedback       = document.getElementById('saveFeedback');
 
+  // Capture any edits the staff made before parking as pending
+  const vehicleNo = (document.getElementById('editVehicleNo')?.value.trim().toUpperCase().replace(/\s+/g, ' '))
+                    || scrapedData.vehicleNo;
+  const validDate = document.getElementById('editValidDate')?.value.trim() || scrapedData.validDate;
+  const uptoDate  = document.getElementById('editUptoDate')?.value.trim()  || scrapedData.uptoDate;
+  const rate      = document.getElementById('editRate')?.value.trim()      || scrapedData.rate;
+
   savePendingBtn.disabled = true;
   feedback.textContent = '';
   feedback.className = 'save-feedback';
 
   try {
-    const res = await sendMsg(MSG.SAVE_PENDING, scrapedData);
+    const res = await sendMsg(MSG.SAVE_PENDING, { ...scrapedData, vehicleNo, validDate, uptoDate, rate });
     if (res && res.success) {
       feedback.textContent = 'Saved as pending';
       feedback.className = 'save-feedback ok';

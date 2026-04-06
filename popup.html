@@ -482,6 +482,52 @@
     .save-feedback.ok  { color: var(--brand); }
     .save-feedback.err { color: var(--red); }
 
+    /* ── Editable certificate form ─────────────────── */
+    .verify-hint {
+      font-size: 11px;
+      color: var(--gray-400);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .edit-field { margin-bottom: 8px; }
+    .edit-label {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--gray-400);
+      margin-bottom: 3px;
+    }
+    .edit-vehicle-input {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      color: var(--gray-800);
+      padding: 6px 10px;
+      text-transform: uppercase;
+    }
+    .edit-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .edit-grid .field-input {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 6px;
+    }
+    .edit-grid .field-error { font-size: 10px; text-align: center; }
+    .expiring-input {
+      border-color: var(--amber) !important;
+      background: var(--amber-light) !important;
+      color: var(--amber) !important;
+    }
+
     /* ── Pending list ────────────────────────────────── */
     .pending-list { display: flex; flex-direction: column; gap: 8px; }
     .pending-item {

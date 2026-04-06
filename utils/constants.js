@@ -39,6 +39,12 @@ export const STORAGE = {
   SHEETS_REFRESH_TOKEN: 'sheetsRefreshToken',
   // sync — true if sheet was newly created, false if existing was linked
   SHEETS_IS_NEW: 'sheetsIsNew',
+  // local — scraper selector registry (populated by background, read by content.js)
+  SCRAPER_CONFIG:      'scraperConfig',
+  SCRAPER_CONFIG_ETAG: 'scraperConfigEtag',
+  SCRAPER_CONFIG_AT:   'scraperConfigFetchedAt', // epoch ms of last successful fetch
+  // local — telemetry events buffered by content.js; flushed by background after saves
+  TELEMETRY_BUFFER: 'telemetryBuffer',
 };
 
 export const DEFAULT_BACKEND_URL = 'http://localhost:8000';

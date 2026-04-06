@@ -4,6 +4,126 @@ import { formatRecordForBackend }                          from './utils/date.js
 import { localGet, localSet, syncGet, syncSet }            from './utils/storage.js';
 import { saveRecord, getGoogleUserEmail, createSheetsSpreadsheet, verifySheetsSpreadsheet, findExistingGreenLeafSheet } from './utils/api.js';
 
+// ─── Scraper config polling ───────────────────────────────────────────────────
+
+const CONFIG_POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Fetch the selector registry from the backend (ETag-gated).
+ * Stores result in chrome.storage.local so content.js can read it synchronously.
+ * Safe to call on every startup — returns immediately on 304 (nothing changed).
+ */
+async function refreshScraperConfig() {
+  try {
+    // Read ETag + timestamp in one call. BACKEND_URL is read from sync storage
+    // only inside saveRecord/sendToBackend (which already do that); here we use
+    // DEFAULT_BACKEND_URL to avoid an extra async sync-storage roundtrip on every
+    // service-worker startup.
+    const local      = await localGet([STORAGE.SCRAPER_CONFIG_ETAG, STORAGE.SCRAPER_CONFIG_AT]);
+    const storedEtag = local[STORAGE.SCRAPER_CONFIG_ETAG];
+    const fetchedAt  = local[STORAGE.SCRAPER_CONFIG_AT] || 0;
+    const baseUrl    = DEFAULT_BACKEND_URL;
+
+    // Skip if we fetched recently (avoids hammering on rapid service-worker restarts)
+    if (storedEtag && Date.now() - fetchedAt < CONFIG_POLL_INTERVAL_MS) return;
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (storedEtag) headers['If-None-Match'] = storedEtag;
+
+    const res = await fetch(`${baseUrl}/scraper/config`, { headers });
+
+    if (res.status === 304) {
+      // Config unchanged — just update the fetch timestamp so we don't retry for 30 min
+      await localSet({ [STORAGE.SCRAPER_CONFIG_AT]: Date.now() });
+      return;
+    }
+
+    if (!res.ok) return; // backend unreachable — silently keep cached config
+
+    const json   = await res.json().catch(() => null);
+    const newEtag = res.headers.get('ETag');
+
+    if (!json || !json.success || !Array.isArray(json.data?.configs)) return;
+
+    // Reshape array → { fieldName: configObject } keyed map for content.js lookup
+    const configMap = {};
+    for (const cfg of json.data.configs) {
+      configMap[cfg.field_name] = {
+        primary_selector:   cfg.primary_selector   || null,
+        fallback_selectors: cfg.fallback_selectors || [],
+        regex_pattern:      cfg.regex_pattern      || null,
+        label_hint:         cfg.label_hint         || null,
+        config_version:     cfg.config_version     || 1,
+      };
+    }
+
+    await localSet({
+      [STORAGE.SCRAPER_CONFIG]:      configMap,
+      [STORAGE.SCRAPER_CONFIG_ETAG]: newEtag || null,
+      [STORAGE.SCRAPER_CONFIG_AT]:   Date.now(),
+    });
+  } catch (_) {
+    // Network error, CORS, etc. — silently keep cached config.
+    // The extension must always be able to scrape even when the backend is down.
+  }
+}
+
+// ─── Telemetry flush ──────────────────────────────────────────────────────────
+
+/**
+ * Flush buffered telemetry events to POST /scraper/telemetry.
+ * Called after a successful save so the admin dashboard reflects real-world
+ * selector health without adding latency to the scrape itself.
+ *
+ * Events stay buffered on failure and will be retried on the next flush.
+ * The buffer is capped at 500 entries in content.js; here we send at most 200
+ * per call to stay within the backend's max_length constraint.
+ */
+async function flushTelemetry() {
+  try {
+    const syncData = await syncGet([STORAGE.AUTH_TOKEN, STORAGE.GREENLEAF_CONNECTED]);
+
+    if (!syncData[STORAGE.GREENLEAF_CONNECTED]) return; // no auth — skip silently
+    const token = syncData[STORAGE.AUTH_TOKEN];
+    if (!token) return;
+
+    // Read the buffer immediately before the network call so we know exactly
+    // which events we're about to send.  After a successful flush we remove
+    // precisely those events — not a stale snapshot read earlier — which
+    // eliminates the race where a SW restart between read and write causes events
+    // to be silently dropped.
+    const localData = await localGet([STORAGE.TELEMETRY_BUFFER]);
+    const buffer    = localData[STORAGE.TELEMETRY_BUFFER] || [];
+    if (buffer.length === 0) return;
+
+    const batch = buffer.slice(0, 200);
+    const res   = await fetch(`${DEFAULT_BACKEND_URL}/scraper/telemetry`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ events: batch }),
+    });
+
+    if (res.ok) {
+      // Re-read the buffer and remove exactly the events we just sent.
+      // Any events appended by content.js between our read and now are preserved.
+      const fresh = await localGet([STORAGE.TELEMETRY_BUFFER]);
+      const current = fresh[STORAGE.TELEMETRY_BUFFER] || [];
+      await localSet({ [STORAGE.TELEMETRY_BUFFER]: current.slice(batch.length) });
+    }
+    // On failure keep the buffer intact — will retry next flush
+  } catch (_) {
+    // Non-fatal: telemetry must never prevent a save
+  }
+}
+
+// ─── Service worker startup ───────────────────────────────────────────────────
+// MV3 service workers restart frequently; refresh config on each startup so
+// the extension never runs stale selectors longer than one poll interval.
+refreshScraperConfig();
+
 // ─── Validation constants ─────────────────────────────────────────────────────
 
 const PUC_ORIGIN = 'https://puc.parivahan.gov.in';
@@ -121,6 +241,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         // Hide this certificate from the extension so user cannot save it again (avoids duplicate entries)
         await localSet({ [STORAGE.LATEST_SCRAPED]: null });
         notify('Saved', formatted.vehicleNo + ' saved successfully.');
+        flushTelemetry(); // fire-and-forget: never await telemetry on the save path
         sendResponse({ success: true });
       } catch (err) {
         notify('Save failed', err.message);
@@ -182,6 +303,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
           await localSet({ [STORAGE.LATEST_SCRAPED]: null });
         }
         notify('Saved', vehicleNo + ' saved successfully.');
+        flushTelemetry(); // fire-and-forget: never await telemetry on the save path
         sendResponse({ success: true });
       } catch (err) {
         notify('Save failed', err.message);

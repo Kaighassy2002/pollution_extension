@@ -206,12 +206,96 @@ function stopConnectionPoll() {
 }
 
 function showGreenLeafLogin() {
+  const chromeFlow = document.getElementById('glChromeConnectFlow');
+  const ffFlow     = document.getElementById('glFirefoxTokenFlow');
+  const manualToggle = document.getElementById('glManualTokenToggle');
+  const titleEl    = document.getElementById('glLoginTitle');
+  const subtitleEl = document.getElementById('glLoginSubtitle');
+  const glStatus   = document.getElementById('glStatus');
+
   showView('greenleafLogin');
-  // Open the web-app auth page in a new tab — it will send the token back
+
+  if (chromeFlow) chromeFlow.style.display = 'block';
+  if (ffFlow) ffFlow.style.display = 'none';
+  if (manualToggle) manualToggle.style.display = '';
+  if (titleEl) titleEl.textContent = 'Connecting to GreenLeaf';
+  if (subtitleEl) subtitleEl.textContent = 'Complete login in the browser tab that just opened.';
+  if (glStatus) { glStatus.textContent = ''; glStatus.className = 'connect-status'; }
+
+  // Chromium: externally_connectable. Firefox: content script + main-world shim (see greenleaf_web_bridge.js).
+  const base = (APP_URL || '').replace(/\/?$/, '/');
   chrome.tabs.create({
-    url: `${APP_URL}/extension-connect?ext_id=${chrome.runtime.id}`,
+    url: `${base}extension-connect?ext_id=${chrome.runtime.id}`,
   });
   startConnectionPoll();
+}
+
+function toggleGreenLeafManualToken() {
+  const chromeFlow = document.getElementById('glChromeConnectFlow');
+  const ffFlow     = document.getElementById('glFirefoxTokenFlow');
+  const manualToggle = document.getElementById('glManualTokenToggle');
+  const titleEl    = document.getElementById('glLoginTitle');
+  const subtitleEl = document.getElementById('glLoginSubtitle');
+  if (!ffFlow || !chromeFlow) return;
+
+  const showingManual = ffFlow.style.display !== 'none';
+  if (showingManual) {
+    ffFlow.style.display = 'none';
+    chromeFlow.style.display = 'block';
+    if (manualToggle) manualToggle.textContent = 'Paste extension token instead';
+    if (titleEl) titleEl.textContent = 'Connecting to GreenLeaf';
+    if (subtitleEl) subtitleEl.textContent = 'Complete login in the browser tab that just opened.';
+    const base = (APP_URL || '').replace(/\/?$/, '/');
+    chrome.tabs.create({
+      url: `${base}extension-connect?ext_id=${chrome.runtime.id}`,
+    });
+    startConnectionPoll();
+  } else {
+    stopConnectionPoll();
+    ffFlow.style.display = 'block';
+    chromeFlow.style.display = 'none';
+    if (manualToggle) manualToggle.textContent = 'Use browser login instead';
+    if (titleEl) titleEl.textContent = 'Connect GreenLeaf';
+    if (subtitleEl) subtitleEl.textContent = 'Paste your extension token from the GreenLeaf web app.';
+  }
+}
+
+async function handleFirefoxTokenConnect() {
+  const input  = document.getElementById('glTokenInput');
+  const status = document.getElementById('glStatus');
+  const btn    = document.getElementById('glTokenConnectBtn');
+  const token  = input && input.value.trim();
+
+  if (!token) {
+    if (status) setStatus(status, 'Paste your extension token.', 'err');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  if (status) setStatus(status, 'Connecting…', 'loading');
+
+  try {
+    const res = await sendMsg(MSG.CONNECT_GREENLEAF, { token });
+    if (res && res.success) {
+      stopConnectionPoll();
+      if (input) input.value = '';
+      await initView();
+    } else {
+      throw new Error((res && res.error) || 'Connection failed');
+    }
+  } catch (err) {
+    if (status) setStatus(status, err.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function openGreenLeafAppTab() {
+  let origin = 'https://greenleaf-frontend.vercel.app';
+  try {
+    origin = new URL(APP_URL).origin;
+  } catch (_) { /* use default */ }
+  chrome.tabs.create({ url: `${origin}/` });
 }
 
 async function handleDisconnectGreenLeaf() {
@@ -724,6 +808,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Connect / login view buttons ────────────────────────────────────────────
   document.getElementById('loginBtn').addEventListener('click',         showGreenLeafLogin);
   document.getElementById('backBtn').addEventListener('click',          () => { stopConnectionPoll(); showView('connect'); });
+  const glTokenConnectBtn = document.getElementById('glTokenConnectBtn');
+  if (glTokenConnectBtn) glTokenConnectBtn.addEventListener('click', handleFirefoxTokenConnect);
+  const glManualTokenToggle = document.getElementById('glManualTokenToggle');
+  if (glManualTokenToggle) glManualTokenToggle.addEventListener('click', toggleGreenLeafManualToken);
+  const glOpenAppBtn = document.getElementById('glOpenAppBtn');
+  if (glOpenAppBtn) glOpenAppBtn.addEventListener('click', openGreenLeafAppTab);
+  const glTokenInput = document.getElementById('glTokenInput');
+  if (glTokenInput) {
+    glTokenInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleFirefoxTokenConnect();
+    });
+  }
   const connectSheetsBtn = document.getElementById('connectSheetsBtn');
   if (connectSheetsBtn) connectSheetsBtn.addEventListener('click', handleConnectSheets);
 

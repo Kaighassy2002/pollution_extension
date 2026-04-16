@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GreenLeaf — PUC Tracker",
-  "version": "2.0",
+  "version": "2.0.1",
   "description": "Record pollution certificates and send expiry reminders. Saves to GreenLeaf backend.",
   "icons": {
     "128": "icons/icon128.png",
@@ -14,16 +14,18 @@
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",
     "https://api.greenleaf.in/*",
+    "https://greenleaf-backend-vl8v.onrender.com/*",
     "http://localhost:8000/*"
   ],
   "externally_connectable": {
     "matches": [
+      "https://greenleaf-frontend.vercel.app/*",
       "https://app.greenleaf.in/*",
       "http://localhost:3000/*"
     ]
   },
   "oauth2": {
-    "client_id": "YOUR_OPERA_APP_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "325807504865-0m67nprugt1drlrmmr09sal1qlplo5om.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/userinfo.email"

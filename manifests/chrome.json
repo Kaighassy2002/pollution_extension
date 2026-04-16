@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GreenLeaf — PUC Tracker",
-  "version": "2.0",
+  "version": "2.0.1",
   "description": "Record pollution certificates and send expiry reminders. Saves to GreenLeaf backend.",
   "icons": {
     "128": "icons/icon128.png",

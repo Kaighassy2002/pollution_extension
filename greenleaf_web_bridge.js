@@ -1,11 +1,26 @@
 /**
  * Isolated-world bridge for the GreenLeaf web app (Firefox).
- * Injects a main-world shim via the background script so pages can call
- * chrome.runtime.sendMessage like Chromium's externally_connectable flow.
+ * Requests background MAIN-world shim injection, then relays EXTENSION_TOKEN
+ * messages from page context to the extension background.
  */
 const GREENLEAF_EXT_BRIDGE = 'GREENLEAF_EXT_BRIDGE_v1';
 
-chrome.runtime.sendMessage({ type: 'GREENLEAF_PREPARE_WEB_SHIM' }, () => {});
+function requestMainWorldShim() {
+  chrome.runtime.sendMessage(
+    { type: 'GREENLEAF_PREPARE_WEB_SHIM' },
+    (res) => {
+      // Best-effort only: popup flow polls for connection status anyway.
+      // If the first attempt races with SW startup, retry once shortly after.
+      if (chrome.runtime.lastError || !res || res.success === false) {
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ type: 'GREENLEAF_PREPARE_WEB_SHIM' }, () => {});
+        }, 150);
+      }
+    }
+  );
+}
+
+requestMainWorldShim();
 
 window.addEventListener('message', (event) => {
   if (event.source !== window || !event.data || !event.data[GREENLEAF_EXT_BRIDGE]) return;

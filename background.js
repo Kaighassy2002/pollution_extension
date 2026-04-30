@@ -176,10 +176,14 @@ function greenleafFirefoxMainWorldShim(extensionId) {
   function parseArgs(a, b, c, d) {
     if (typeof a === 'object' && a !== null && !Array.isArray(a)) {
       if (typeof b === 'function') return { message: a, cb: b };
+      return { message: a, cb: null };
     }
     if (typeof a === 'string' && typeof b === 'object' && b !== null) {
+      // (extensionId, message[, options], callback?) form
+      if (a !== extensionId) return null;
       if (typeof c === 'function') return { message: b, cb: c };
       if (typeof d === 'function') return { message: b, cb: d };
+      return { message: b, cb: null };
     }
     return null;
   }
@@ -189,9 +193,24 @@ function greenleafFirefoxMainWorldShim(extensionId) {
   globalThis.chrome.runtime.id = extensionId;
   globalThis.chrome.runtime.sendMessage = function (a, b, c, d) {
     const parsed = parseArgs(a, b, c, d);
-    if (!parsed || !parsed.message) return;
+    if (!parsed || !parsed.message) {
+      if (typeof Promise !== 'undefined') {
+        return Promise.resolve({ success: false, error: 'Invalid sendMessage arguments' });
+      }
+      return;
+    }
     const id = ++mid;
-    if (parsed.cb) pending[id] = parsed.cb;
+    if (parsed.cb) {
+      pending[id] = parsed.cb;
+      window.postMessage({ [BRIDGE]: true, type: 'sendMessage', id, message: parsed.message }, '*');
+      return;
+    }
+    if (typeof Promise !== 'undefined') {
+      return new Promise((resolve) => {
+        pending[id] = resolve;
+        window.postMessage({ [BRIDGE]: true, type: 'sendMessage', id, message: parsed.message }, '*');
+      });
+    }
     window.postMessage({ [BRIDGE]: true, type: 'sendMessage', id, message: parsed.message }, '*');
   };
 }

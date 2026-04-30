@@ -40,8 +40,9 @@ export function isExpiringSoon(isoDateStr, days = 30) {
   return diffMs >= 0 && diffMs <= days * 24 * 60 * 60 * 1000;
 }
 
-// Indian vehicle number: 2 letters + 1-2 digits + 1-3 letters + 4 digits (spaces optional)
-const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/;
+// Indian vehicle number: 2 letters + 1-2 digits + optional 1-3 letters + 4 digits (spaces optional)
+// Supports both modern (KL15AB1234) and old-style (KL154674) formats.
+const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?(?:[A-Z]{1,3}\s?)?\d{4}$/;
 
 // Indian mobile: exactly 10 digits, starts with 6-9
 const MOBILE_RE = /^[6-9]\d{9}$/;

@@ -15,6 +15,10 @@ export const MSG = {
   CONNECT_GREENLEAF:    'CONNECT_GREENLEAF',
   DISCONNECT_GREENLEAF: 'DISCONNECT_GREENLEAF',
   GET_GREENLEAF_STATUS: 'GET_GREENLEAF_STATUS',
+  /** Firefox: content script relays web app token (Chromium uses externally_connectable). */
+  RELAY_WEB_EXTENSION_TOKEN: 'RELAY_WEB_EXTENSION_TOKEN',
+  /** Firefox: inject main-world chrome.runtime.sendMessage shim on GreenLeaf pages. */
+  GREENLEAF_PREPARE_WEB_SHIM: 'GREENLEAF_PREPARE_WEB_SHIM',
 };
 
 export const STORAGE = {

@@ -281,6 +281,22 @@
     .btn-primary-full:hover { background: var(--brand-dark); }
     .btn-primary-full:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
 
+    .btn-text-link {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 6px;
+      background: none;
+      border: none;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
+      font-family: inherit;
+    }
+    .btn-text-link:hover { color: var(--brand-dark); }
+
     /* ── Main view ───────────────────────────────────── */
     #viewMain { display: none; }
 
@@ -823,14 +839,29 @@
     </button>
 
     <div class="login-hero">
-      <h2>Connecting to GreenLeaf</h2>
-      <p>Complete login in the browser tab that just opened.</p>
+      <h2 id="glLoginTitle">Connecting to GreenLeaf</h2>
+      <p id="glLoginSubtitle">Complete login in the browser tab that just opened.</p>
     </div>
 
-    <div class="waiting-area">
-      <div class="spinner"></div>
-      <p class="waiting-hint">Waiting for authentication…</p>
-      <p class="waiting-hint">This popup can be closed — you'll connect automatically.</p>
+    <div id="glChromeConnectFlow">
+      <div class="waiting-area">
+        <div class="spinner"></div>
+        <p class="waiting-hint">Waiting for authentication…</p>
+        <p class="waiting-hint">This popup can be closed — you'll connect automatically.</p>
+      </div>
+    </div>
+
+    <button type="button" class="btn-text-link" id="glManualTokenToggle">Paste extension token instead</button>
+
+    <div id="glFirefoxTokenFlow" style="display: none;">
+      <div class="field">
+        <label for="glTokenInput">Extension token</label>
+        <input type="password" id="glTokenInput" class="field-input" autocomplete="off" spellcheck="false"
+               placeholder="Paste token from GreenLeaf">
+        <p class="field-hint">From the GreenLeaf web app: account or settings → extension token. Use this if automatic browser login does not work.</p>
+      </div>
+      <button type="button" class="btn-primary-full" id="glTokenConnectBtn">Connect</button>
+      <button type="button" class="btn-text-link" id="glOpenAppBtn">Open GreenLeaf in a new tab</button>
     </div>
 
     <div class="connect-status" id="glStatus"></div>

@@ -1,21 +1,31 @@
 {
   "manifest_version": 3,
   "name": "GreenLeaf — PUC Tracker",
-  "version": "2.0",
+  "version": "2.4.1",
   "description": "Record pollution certificates and send expiry reminders. Saves to GreenLeaf backend.",
   "icons": {
     "128": "icons/icon128.png",
     "48":  "icons/icon48.png",
     "16":  "icons/icon16.png"
   },
-  "permissions": ["storage", "notifications", "identity", "tabs"],
+  "permissions": ["storage", "notifications", "identity", "tabs", "scripting"],
   "host_permissions": [
     "https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml",
+    "https://greenleaf-frontend.vercel.app/*",
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",
     "https://api.greenleaf.in/*",
+    "https://greenleaf-backend-vl8v.onrender.com/*",
+    "http://localhost:3000/*",
     "http://localhost:8000/*"
   ],
+  "oauth2": {
+    "client_id": "325807504865-tmjhutbd5mmg5gunf58ak6ccm99qdg4s.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+  },
   "background": {
     "scripts": ["background.js"],
     "type": "module"
@@ -25,6 +35,14 @@
       "matches": ["https://puc.parivahan.gov.in/puc/views/pucCertificateNew.xhtml"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://greenleaf-frontend.vercel.app/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["greenleaf_web_bridge.js"],
+      "run_at": "document_start"
     }
   ],
   "action": {

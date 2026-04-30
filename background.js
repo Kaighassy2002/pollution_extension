@@ -130,16 +130,108 @@ const PUC_ORIGIN = 'https://puc.parivahan.gov.in';
 const MOBILE_RE  = /^[6-9]\d{9}$/;
 const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?(?:[A-Z]{1,3}\s?)?\d{4}$/;
 
+function getSheetsOAuthClientId() {
+  const manifestClientId = chrome.runtime.getManifest()?.oauth2?.client_id;
+  return manifestClientId || GOOGLE_SHEETS_CLIENT_ID;
+}
+
+const IS_FIREFOX_BUILD = Boolean(chrome.runtime.getManifest()?.browser_specific_settings?.gecko);
+
+const GREENLEAF_WEB_URL_RE = /^https:\/\/greenleaf-frontend\.vercel\.app\//;
+const GREENLEAF_LOCAL_URL_RE = /^http:\/\/localhost:3000\//;
+
+function isGreenLeafWebPageUrl(url) {
+  return typeof url === 'string' &&
+    (GREENLEAF_WEB_URL_RE.test(url) || GREENLEAF_LOCAL_URL_RE.test(url));
+}
+
+/**
+ * Injected into the GreenLeaf web app (main world) on Firefox so the site can call
+ * chrome.runtime.sendMessage(extensionId, { type: 'EXTENSION_TOKEN', token }, cb)
+ * the same way as on Chromium (externally_connectable).
+ */
+function greenleafFirefoxMainWorldShim(extensionId) {
+  const BRIDGE = 'GREENLEAF_EXT_BRIDGE_v1';
+  const MARK = '__greenleafFfExtShim';
+  try {
+    if (globalThis[MARK]) return;
+    globalThis[MARK] = true;
+  } catch (_) {
+    /* no-op */
+  }
+  if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.sendMessage === 'function')
+    return;
+
+  let mid = 0;
+  const pending = Object.create(null);
+
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window || !ev.data || !ev.data[BRIDGE] || ev.data.type !== 'sendMessageResponse')
+      return;
+    const cb = pending[ev.data.id];
+    delete pending[ev.data.id];
+    if (typeof cb === 'function') cb(ev.data.response);
+  });
+
+  function parseArgs(a, b, c, d) {
+    if (typeof a === 'object' && a !== null && !Array.isArray(a)) {
+      if (typeof b === 'function') return { message: a, cb: b };
+    }
+    if (typeof a === 'string' && typeof b === 'object' && b !== null) {
+      if (typeof c === 'function') return { message: b, cb: c };
+      if (typeof d === 'function') return { message: b, cb: d };
+    }
+    return null;
+  }
+
+  globalThis.chrome = globalThis.chrome || {};
+  globalThis.chrome.runtime = globalThis.chrome.runtime || {};
+  globalThis.chrome.runtime.id = extensionId;
+  globalThis.chrome.runtime.sendMessage = function (a, b, c, d) {
+    const parsed = parseArgs(a, b, c, d);
+    if (!parsed || !parsed.message) return;
+    const id = ++mid;
+    if (parsed.cb) pending[id] = parsed.cb;
+    window.postMessage({ [BRIDGE]: true, type: 'sendMessage', id, message: parsed.message }, '*');
+  };
+}
+
+async function validateAndPersistExtensionToken(token, invalidTokenMessage) {
+  const res = await fetch(`${DEFAULT_BACKEND_URL}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  let email = null;
+  if (res.ok) {
+    const data = await res.json().catch(() => ({}));
+    email = data.email || data.data?.email || null;
+  } else if (res.status === 401) {
+    throw new Error(invalidTokenMessage);
+  } else if (res.status === 404) {
+    email = null;
+  } else {
+    throw new Error(`Backend error: HTTP ${res.status}`);
+  }
+
+  await syncSet({
+    [STORAGE.GREENLEAF_CONNECTED]: true,
+    [STORAGE.GREENLEAF_EMAIL]:     email,
+    [STORAGE.AUTH_TOKEN]:          token,
+  });
+}
+
 // ─── Trusted sender check ─────────────────────────────────────────────────────
 
 /**
  * Accept only messages from:
  *   - Extension pages (popup, options) — sender.tab is undefined
  *   - The PUC portal content script
+ *   - The GreenLeaf web app content script (Firefox bridge)
  */
 function isTrustedSender(sender) {
   if (!sender.tab) return true; // extension-internal (popup / options / background)
   if (sender.id === chrome.runtime.id) return true; // extension pages opened as tabs (e.g. pending.html)
+  if (isGreenLeafWebPageUrl(sender.url)) return true;
   return sender.origin === PUC_ORIGIN ||
          (typeof sender.url === 'string' && sender.url.startsWith(PUC_ORIGIN));
 }
@@ -184,10 +276,50 @@ async function removeFromPending(vehicleNo) {
 }
 
 function notify(title, message) {
-  chrome.notifications.create(
-    { type: 'basic', iconUrl: 'icons/icon128.png', title, message, priority: 2 },
-    function(id) { setTimeout(function() { chrome.notifications.clear(id); }, 5000); }
-  );
+  const opts = { type: 'basic', iconUrl: 'icons/icon128.png', title, message, priority: 2 };
+
+  function clearLater(id) {
+    if (!id || !chrome.notifications || typeof chrome.notifications.clear !== 'function') return;
+    setTimeout(() => {
+      try { chrome.notifications.clear(id); } catch (_) { /* no-op */ }
+    }, 5000);
+  }
+
+  function fallbackWebNotification() {
+    // Fallback for browsers/environments where extension notifications API behaves differently.
+    if (typeof self !== 'undefined' && self.registration && typeof self.registration.showNotification === 'function') {
+      self.registration.showNotification(title, { body: message, icon: 'icons/icon128.png' }).catch(() => {});
+      return;
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try { new Notification(title, { body: message, icon: 'icons/icon128.png' }); } catch (_) { /* no-op */ }
+    }
+  }
+
+  try {
+    if (!chrome.notifications || typeof chrome.notifications.create !== 'function') {
+      fallbackWebNotification();
+      return;
+    }
+
+    // Chromium callback style
+    const maybeId = chrome.notifications.create('', opts, (id) => {
+      if (chrome.runtime && chrome.runtime.lastError) {
+        fallbackWebNotification();
+        return;
+      }
+      clearLater(id);
+    });
+
+    // Firefox/webextension promise style
+    if (maybeId && typeof maybeId.then === 'function') {
+      maybeId.then(clearLater).catch(() => fallbackWebNotification());
+    } else if (typeof maybeId === 'string' && maybeId) {
+      clearLater(maybeId);
+    }
+  } catch (_) {
+    fallbackWebNotification();
+  }
 }
 
 // ─── Message router ───────────────────────────────────────────────────────────
@@ -350,6 +482,65 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
     return true;
   }
 
+  // ── GREENLEAF_PREPARE_WEB_SHIM (Firefox only) ───────────────────────────────
+  if (type === MSG.GREENLEAF_PREPARE_WEB_SHIM) {
+    if (!IS_FIREFOX_BUILD) {
+      sendResponse({ success: true });
+      return false;
+    }
+    (async function() {
+      try {
+        const tabId = sender.tab?.id;
+        const pageUrl = sender.url || sender.tab?.url;
+        if (tabId == null || !isGreenLeafWebPageUrl(pageUrl)) {
+          sendResponse({ success: false, error: 'Invalid tab' });
+          return;
+        }
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: greenleafFirefoxMainWorldShim,
+          args: [chrome.runtime.id],
+        });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── RELAY_WEB_EXTENSION_TOKEN (Firefox web app → background) ───────────────
+  if (type === MSG.RELAY_WEB_EXTENSION_TOKEN) {
+    (async function() {
+      try {
+        const pageUrl = sender.url || sender.tab?.url;
+        if (!isGreenLeafWebPageUrl(pageUrl)) {
+          sendResponse({ success: false, error: 'Untrusted page' });
+          return;
+        }
+        const inner = payload;
+        if (!inner || inner.type !== 'EXTENSION_TOKEN') {
+          sendResponse({ success: false, error: 'Invalid message' });
+          return;
+        }
+        const token = inner.token;
+        if (!token || typeof token !== 'string') {
+          sendResponse({ success: false, error: 'No token provided' });
+          return;
+        }
+        await validateAndPersistExtensionToken(
+          token,
+          'Invalid or expired token. Please try again.'
+        );
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
   // ── CONNECT_GREENLEAF ─────────────────────────────────────────────────────
   if (type === MSG.CONNECT_GREENLEAF) {
     (async function() {
@@ -357,32 +548,12 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         const { token } = payload || {};
         if (!token) throw new Error('Extension token is required');
 
-        const baseUrl = DEFAULT_BACKEND_URL;
+        await validateAndPersistExtensionToken(
+          token,
+          'Invalid token — generate a new one from your GreenLeaf dashboard.'
+        );
 
-        // Validate token against the backend
-        const res = await fetch(`${baseUrl}/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        let email = null;
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          email = data.email || data.data?.email || null;
-        } else if (res.status === 401) {
-          throw new Error('Invalid token — generate a new one from your GreenLeaf dashboard.');
-        } else if (res.status === 404) {
-          email = null; // endpoint not yet implemented, store creds anyway
-        } else {
-          throw new Error(`Backend error: HTTP ${res.status}`);
-        }
-
-        await syncSet({
-          [STORAGE.GREENLEAF_CONNECTED]: true,
-          [STORAGE.GREENLEAF_EMAIL]:     email,
-          [STORAGE.AUTH_TOKEN]:          token,
-        });
-
-        sendResponse({ success: true, email });
+        sendResponse({ success: true });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
       }
@@ -428,6 +599,10 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   if (type === MSG.CONNECT_SHEETS) {
     (async function() {
       try {
+        const clientId = getSheetsOAuthClientId();
+        if (!clientId || String(clientId).startsWith('YOUR_')) {
+          throw new Error('Google OAuth client ID is not configured for this browser build.');
+        }
         const redirectUri = chrome.identity.getRedirectURL();
         const scope = [
           'https://www.googleapis.com/auth/spreadsheets',
@@ -436,7 +611,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         ].join(' ');
 
         const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-        authUrl.searchParams.set('client_id', GOOGLE_SHEETS_CLIENT_ID);
+        authUrl.searchParams.set('client_id', clientId);
         authUrl.searchParams.set('redirect_uri', redirectUri);
         authUrl.searchParams.set('response_type', 'token');
         authUrl.searchParams.set('scope', scope);
@@ -561,28 +736,10 @@ chrome.runtime.onMessageExternal.addListener(function(message, sender, sendRespo
 
   (async function() {
     try {
-      const res = await fetch(`${DEFAULT_BACKEND_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      let email = null;
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        email = data.email || data.data?.email || null;
-      } else if (res.status === 401) {
-        throw new Error('Invalid or expired token. Please try again.');
-      } else if (res.status === 404) {
-        email = null; // endpoint exists but profile not found, store anyway
-      } else {
-        throw new Error(`Backend error: HTTP ${res.status}`);
-      }
-
-      await syncSet({
-        [STORAGE.GREENLEAF_CONNECTED]: true,
-        [STORAGE.GREENLEAF_EMAIL]:     email,
-        [STORAGE.AUTH_TOKEN]:          token,
-      });
-
+      await validateAndPersistExtensionToken(
+        token,
+        'Invalid or expired token. Please try again.'
+      );
       sendResponse({ success: true });
     } catch (err) {
       sendResponse({ success: false, error: err.message });

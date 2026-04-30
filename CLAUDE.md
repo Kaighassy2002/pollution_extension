@@ -103,7 +103,7 @@ Report missing fields back to `background.js` as `{ success: false, error: "FIEL
 PUC portal returns dates as `DD/MM/YYYY`. All conversion to ISO 8601 (`YYYY-MM-DD`) lives in `utils/date.js`. The `formatRecordForBackend` logic currently in `background.js` must be extracted there.
 
 Input validation before backend submission:
-- Vehicle number: `^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$`
+- Vehicle number: `^[A-Z]{2}[0-9]{1,2}(?:[A-Z]{1,3})?[0-9]{4}$` (supports modern KL15AB1234 and old-style KL154674)
 - Mobile (if provided): exactly 10 digits
 - Rate: strip `"Rs."`, parse as integer
 

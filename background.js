@@ -128,7 +128,7 @@ refreshScraperConfig();
 
 const PUC_ORIGIN = 'https://puc.parivahan.gov.in';
 const MOBILE_RE  = /^[6-9]\d{9}$/;
-const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/;
+const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?(?:[A-Z]{1,3}\s?)?\d{4}$/;
 
 // ─── Trusted sender check ─────────────────────────────────────────────────────
 

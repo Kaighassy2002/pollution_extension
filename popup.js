@@ -22,7 +22,7 @@ function escapeHtml(text) {
   return d.innerHTML;
 }
 
-const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/;
+const VEHICLE_RE = /^[A-Z]{2}\s?\d{1,2}\s?(?:[A-Z]{1,3}\s?)?\d{4}$/;
 const DATE_RE    = /^\d{2}\/\d{2}\/\d{4}$/;
 
 function validateMobile(value) {

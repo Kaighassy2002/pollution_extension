@@ -27,7 +27,7 @@
     vehicleNo: {
       primary_selector:   '#j_idt34',
       fallback_selectors: ["[id$='vehicleNo']", "[id*='vehicle']"],
-      regex_pattern:      '[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}',
+      regex_pattern:      '[A-Z]{2}[0-9]{1,2}(?:[A-Z]{1,3})?[0-9]{4}',
       label_hint:         'Vehicle No',
       config_version:     0,
     },

@@ -137,7 +137,7 @@ function getSheetsOAuthClientId() {
 
 const IS_FIREFOX_BUILD = Boolean(chrome.runtime.getManifest()?.browser_specific_settings?.gecko);
 
-const GREENLEAF_WEB_URL_RE = /^https:\/\/greenleaf-frontend\.vercel\.app\//;
+const GREENLEAF_WEB_URL_RE = /^https:\/\/www\.greenleafpucc\.co\.in\//;
 const GREENLEAF_LOCAL_URL_RE = /^http:\/\/localhost:3000\//;
 
 function isGreenLeafWebPageUrl(url) {

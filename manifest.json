@@ -18,7 +18,7 @@
   ],
   "externally_connectable": {
     "matches": [
-      "https://greenleaf-frontend.vercel.app/*",
+      "https://www.greenleafpucc.co.in/*",
       "http://localhost:3000/*"
     ]
   },

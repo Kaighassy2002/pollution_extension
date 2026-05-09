@@ -26,7 +26,7 @@ This is the simplest way — no Node.js or terminal required.
 Every time you change a source file, go back to `chrome://extensions` and click the reload button on the extension card.
 
 ---
-
+## "https://www.greenleafpucc.co.in/*",
 ## Why there are build commands (and when you need them)
 
 The extension supports three browsers — Chrome, Firefox, and Opera. Each browser needs a slightly different `manifest.json` (the file that tells the browser what the extension is and what permissions it needs).

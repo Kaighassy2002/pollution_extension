@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GreenLeaf — PUC Tracker",
-  "version": "2.0.1",
+  "version": "2.4.4",
   "description": "Record pollution certificates and send expiry reminders. Saves to GreenLeaf backend.",
   "icons": {
     "128": "icons/icon128.png",
@@ -19,7 +19,7 @@
   ],
   "externally_connectable": {
     "matches": [
-      "https://greenleaf-frontend.vercel.app/*",
+      "https://www.greenleafpucc.co.in/*",
       "https://app.greenleaf.in/*",
       "http://localhost:3000/*"
     ]

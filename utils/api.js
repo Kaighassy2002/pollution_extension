@@ -201,6 +201,24 @@ export async function sendToSheets(record) {
   return result.body;
 }
 
+/** Build a user-visible message from GreenLeaf or raw FastAPI error JSON. */
+function formatBackendErrorBody(body, status) {
+  if (body && typeof body.message === 'string' && body.message.trim()) {
+    return body.message.trim();
+  }
+  if (body && body.detail != null) {
+    const d = body.detail;
+    if (typeof d === 'string') return d;
+    if (Array.isArray(d)) {
+      const parts = d
+        .map((x) => (x && typeof x === 'object' && x.msg ? String(x.msg) : JSON.stringify(x)))
+        .filter(Boolean);
+      if (parts.length) return parts.join('; ');
+    }
+  }
+  return `Server error: HTTP ${status}`;
+}
+
 /**
  * POST a formatted certificate record to the GreenLeaf FastAPI backend.
  */
@@ -218,35 +236,40 @@ export async function sendToBackend(record) {
     body:    JSON.stringify(record),
   });
 
+  const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || `Server error: HTTP ${res.status}`);
+    throw new Error(formatBackendErrorBody(body, res.status));
   }
-  return res.json();
+  return body;
 }
 
 /**
  * Save a record to all active destinations.
- * Requirement: when the extension is connected to Google Sheets, the record is always
- * written to that sheet (in addition to GreenLeaf backend if connected).
- * Throws only if every destination fails.
+ * When GreenLeaf is connected, the API write must succeed for the save to count as
+ * successful (same expectation as the web app Records flow). Sheets runs after;
+ * if Sheets fails while GreenLeaf succeeded, an error is thrown with a clear message.
  */
 export async function saveRecord(record) {
   const sync = await syncGet([STORAGE.GREENLEAF_CONNECTED, STORAGE.SHEETS_CONNECTED]);
+  const greenleaf = !!sync[STORAGE.GREENLEAF_CONNECTED];
+  const sheets = !!sync[STORAGE.SHEETS_CONNECTED];
 
-  const destinations = [];
-  if (sync[STORAGE.GREENLEAF_CONNECTED]) destinations.push(() => sendToBackend(record));
-  if (sync[STORAGE.SHEETS_CONNECTED])    destinations.push(() => sendToSheets(record));
-
-  if (destinations.length === 0) {
+  if (!greenleaf && !sheets) {
     throw new Error('No destination configured. Connect Google Sheets or GreenLeaf from the extension popup.');
   }
 
-  const results  = await Promise.allSettled(destinations.map(fn => fn()));
-  const failures = results.filter(r => r.status === 'rejected');
-
-  if (failures.length === destinations.length) {
-    throw new Error(failures.map(f => f.reason.message).join(' | '));
+  if (greenleaf) {
+    await sendToBackend(record);
   }
-  // At least one succeeded — partial failures are non-fatal
+
+  if (sheets) {
+    try {
+      await sendToSheets(record);
+    } catch (err) {
+      if (greenleaf) {
+        throw new Error(`Saved to GreenLeaf, but Google Sheets failed: ${err.message}`);
+      }
+      throw err;
+    }
+  }
 }

@@ -291,7 +291,7 @@ async function handleFirefoxTokenConnect() {
 }
 
 function openGreenLeafAppTab() {
-  let origin = 'https://greenleaf-frontend.vercel.app';
+  let origin = 'https://www.greenleafpucc.co.in';
   try {
     origin = new URL(APP_URL).origin;
   } catch (_) { /* use default */ }
